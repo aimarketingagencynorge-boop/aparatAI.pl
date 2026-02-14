@@ -12,11 +12,7 @@
     <style>
         :root {
             --neon-blue: #2563eb;
-            --neon-glow: #3b82f6;
-            --deep-space: #010101;
-        }
-        html {
-            scroll-behavior: smooth;
+            --deep-space: #020202;
         }
         body {
             background-color: var(--deep-space);
@@ -29,26 +25,36 @@
             scrollbar-color: var(--neon-blue) transparent;
         }
         
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.5); }
-        ::-webkit-scrollbar-thumb { background: var(--neon-blue); border-radius: 10px; box-shadow: 0 0 15px var(--neon-glow); }
+        /* Custom Scrollbar for Chrome/Safari/Edge */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--neon-blue);
+            border-radius: 10px;
+            box-shadow: 0 0 10px var(--neon-blue);
+        }
 
-        .mono { font-family: 'JetBrains Mono', monospace; text-shadow: 0 0 8px rgba(37, 99, 235, 0.5); }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
         
-        /* Layer 1: Deep Nebula */
+        /* Deep Space Layers - Kept FIXED during scroll */
         .nebula {
             position: fixed;
-            inset: -150px;
+            inset: -50px;
             background: 
-                radial-gradient(circle at 15% 25%, rgba(37, 99, 235, 0.12) 0%, transparent 45%),
-                radial-gradient(circle at 85% 75%, rgba(30, 58, 138, 0.15) 0%, transparent 45%),
-                radial-gradient(circle at 50% 50%, rgba(2, 2, 2, 1) 0%, rgba(0, 0, 0, 0.95) 100%);
+                radial-gradient(circle at 20% 30%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(30, 58, 138, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 1) 0%, rgba(2, 2, 2, 0.8) 100%);
             z-index: -3;
-            filter: blur(80px);
+            filter: blur(40px);
             pointer-events: none;
         }
 
-        /* Layer 2: Starfield */
         .starfield {
             position: fixed;
             inset: 0;
@@ -56,19 +62,18 @@
             pointer-events: none;
         }
 
-        /* Layer 3: HUD Digital Grid */
         .digital-grid {
             position: fixed;
             inset: 0;
-            background-image: 
-                linear-gradient(rgba(37, 99, 235, 0.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
-            background-size: 80px 80px;
+            background-image: linear-gradient(rgba(37, 99, 235, 0.03) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(37, 99, 235, 0.03) 1px, transparent 1px);
+            background-size: 100px 100px;
             z-index: -1;
             pointer-events: none;
-            mask-image: radial-gradient(circle at center, black 20%, transparent 90%);
+            mask-image: radial-gradient(circle at center, black, transparent 80%);
         }
 
+        /* Glitch Animation */
         @keyframes glitch {
             0% { transform: translate(0); }
             1% { transform: translate(-2px, 1px); }
@@ -76,36 +81,39 @@
             3% { transform: translate(0); }
             100% { transform: translate(0); }
         }
-        .glitch-effect { animation: glitch 8s infinite; }
-
-        @keyframes rayFlow {
-            0% { stroke-dashoffset: 100; opacity: 0.2; }
-            50% { opacity: 0.8; }
-            100% { stroke-dashoffset: 0; opacity: 0.2; }
+        .glitch-effect {
+            animation: glitch 10s infinite;
         }
-        .laser-link { stroke-dasharray: 12 6; animation: rayFlow 4s linear infinite; }
 
+        /* Ray Flow */
+        @keyframes rayFlow {
+            0% { stroke-dashoffset: 100; opacity: 0.1; }
+            50% { opacity: 0.6; }
+            100% { stroke-dashoffset: 0; opacity: 0.1; }
+        }
+        .laser-link {
+            stroke-dasharray: 10 5;
+            animation: rayFlow 3s linear infinite;
+        }
+
+        /* HUD Scanning Line */
         .scanning-line {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--neon-glow), transparent);
-            box-shadow: 0 0 20px var(--neon-glow);
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
+            box-shadow: 0 0 10px var(--neon-blue);
             z-index: 100;
             pointer-events: none;
-            opacity: 0.15;
-            animation: scan 15s linear infinite;
+            opacity: 0.1;
+            animation: scan 10s linear infinite;
         }
-        @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
-
-        /* Floating Animation */
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-15px); }
+        @keyframes scan {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100vh); }
         }
-        .floating-module { animation: float 6s ease-in-out infinite; }
     </style>
 <script type="importmap">
 {
@@ -127,26 +135,24 @@
     <div id="root"></div>
     <script>
         const starfield = document.getElementById('starfield');
-        for (let i = 0; i < 250; i++) {
+        for (let i = 0; i < 150; i++) {
             const star = document.createElement('div');
             star.style.position = 'absolute';
-            star.style.background = '#ffffff';
+            star.style.background = 'white';
             star.style.borderRadius = '50%';
             star.style.width = Math.random() * 2 + 'px';
             star.style.height = star.style.width;
             star.style.left = Math.random() * 100 + '%';
             star.style.top = Math.random() * 100 + '%';
-            star.style.opacity = Math.random() * 0.7 + 0.1;
-            if(Math.random() > 0.95) {
-                star.style.boxShadow = '0 0 10px #ffffff';
-            }
+            star.style.opacity = Math.random() * 0.5 + 0.2;
             starfield.appendChild(star);
         }
+
         window.addEventListener('mousemove', (e) => {
-            const x = (e.clientX / window.innerWidth - 0.5) * 40;
-            const y = (e.clientY / window.innerHeight - 0.5) * 40;
+            const x = (e.clientX / window.innerWidth - 0.5) * 20;
+            const y = (e.clientY / window.innerHeight - 0.5) * 20;
             document.getElementById('nebula').style.transform = `translate(${x}px, ${y}px)`;
-            document.getElementById('starfield').style.transform = `translate(${x*1.2}px, ${y*1.2}px)`;
+            document.getElementById('starfield').style.transform = `translate(${x*1.5}px, ${y*1.5}px)`;
         });
     </script>
 </body>

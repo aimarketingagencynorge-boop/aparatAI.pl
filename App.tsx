@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AppState, MissionType, ProcessingResult, Scenography, CampaignAsset } from './types';
-import { cloudService } from './services/cloudService';
-import TechnicalHUD from './components/TechnicalHUD';
-import DropZone from './components/DropZone';
+import { AppState, MissionType, ProcessingResult, Scenography, CampaignAsset } from './types.ts';
+import { cloudService } from './services/cloudService.ts';
+import TechnicalHUD from './components/TechnicalHUD.tsx';
+import DropZone from './components/DropZone.tsx';
 import { GoogleGenAI } from "@google/genai";
 
 const SCENOGRAPHIES: Scenography[] = [
@@ -127,7 +126,11 @@ const App: React.FC = () => {
       setCurrentStep(AppState.RESULT);
       setActiveModule(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (e) { setIsProcessing(false); alert("Signal Lost. System Reset."); }
+    } catch (e) { 
+      setIsProcessing(false); 
+      console.error(e);
+      alert("Signal Lost. System Reset."); 
+    }
   };
 
   const scrollTo = (ref: React.RefObject<HTMLDivElement>) => {
@@ -176,11 +179,9 @@ const App: React.FC = () => {
         {(currentStep === AppState.MISSION_HUB || currentStep === AppState.RESULT || currentStep === AppState.CAMPAIGN) && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col w-full">
             
-            {/* Section 1: Dashboard */}
             <section ref={homeRef} className="relative min-h-screen flex flex-col items-center justify-center pt-24 pb-32">
               <div className="relative w-full h-full flex items-center justify-center">
                 
-                {/* Laser Beams (Desktop Only) */}
                 {!isMobile && (
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
                     <defs><filter id="beamGlow"><feGaussianBlur stdDeviation="3" result="blur"/><feComposite in="SourceGraphic" in2="blur" operator="over"/></filter></defs>
@@ -195,7 +196,6 @@ const App: React.FC = () => {
                   </svg>
                 )}
 
-                {/* Central Initiate Core */}
                 <motion.div 
                   className="relative z-20 w-[300px] h-[300px] md:w-[500px] md:h-[500px] glitch-effect"
                   animate={activeModule ? { scale: 0.85, opacity: 0.4, filter: 'blur(5px)' } : { scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -221,7 +221,6 @@ const App: React.FC = () => {
                   </div>
                 </motion.div>
 
-                {/* Interactive Orbital Wheels */}
                 <div className={isMobile ? "mt-16 grid grid-cols-2 gap-8 px-10" : "absolute inset-0 pointer-events-none"}>
                   {ORBIT_MODULES.map((m) => {
                     const rad = (m.angle * Math.PI) / 180;
@@ -253,7 +252,6 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* Results Layer */}
             {currentStep === AppState.RESULT && result && (
               <section className="min-h-screen py-32 px-10 flex flex-col items-center">
                  <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 gap-24 items-center">
@@ -273,7 +271,6 @@ const App: React.FC = () => {
               </section>
             )}
 
-            {/* Section 2: Instruction Manual */}
             <section ref={manualRef} className="min-h-screen py-40 px-10 flex flex-col items-center bg-black/10">
               <div className="w-full max-w-6xl">
                 <h2 className="text-6xl md:text-8xl font-black italic uppercase tracking-tighter mb-24 text-center leading-none">WORKSHOP <br/><span className="text-blue-600">DOWODZENIA</span></h2>
@@ -294,7 +291,6 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* Section 3: FAQ & Paywall */}
             <section ref={faqRef} className="min-h-screen py-40 px-10 flex flex-col items-center pb-80">
               <div className="w-full max-w-4xl">
                 <h2 className="text-6xl md:text-8xl font-black italic uppercase tracking-tighter mb-24 text-center">SYSTEM <span className="text-blue-600">INTEL</span></h2>
@@ -321,7 +317,6 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Workshop Module Detail Modal */}
       <AnimatePresence>
         {activeModule && (
           <>
