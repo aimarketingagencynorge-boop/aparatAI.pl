@@ -88,9 +88,24 @@ const App: React.FC = () => {
 
   const handleMainUpload = async (file: File) => {
     if (credits === 0) return;
+    
+    // Safety check for file size (Gemini multimodal limit is usually around 20MB, but let's be safe)
+    if (file.size > 15 * 1024 * 1024) {
+      alert("FILE TOO LARGE: Maksymalny rozmiar to 15MB.");
+      return;
+    }
+
     setIsProcessing(true);
+    console.log("Starting upload sequence for:", file.name);
+
     try {
       const uploaded = await cloudService.uploadImage(file);
+      console.log("Local processing complete, initiating AI link...");
+
+      if (!process.env.API_KEY) {
+        throw new Error("CRITICAL: API_KEY is not defined in environment.");
+      }
+
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const base64Data = uploaded.url.split(',')[1];
       const mimeType = uploaded.url.split(';')[0].split(':')[1];
@@ -100,28 +115,45 @@ const App: React.FC = () => {
         contents: {
           parts: [
             { inlineData: { data: base64Data, mimeType: mimeType } },
-            { text: `Professional studio photography. High-end lighting, satin anthracite flow background. 8k hyper-detailed product. Isolated on professional floor.` }
+            { text: "Professional studio product photography. Cinematic lighting, luxury satin anthracite background, 8k hyper-detailed resolution. Perfect studio floor." }
           ]
         },
-        config: { imageConfig: { aspectRatio: "1:1" } }
+        config: { 
+          imageConfig: { aspectRatio: "1:1" }
+        }
       });
+
+      console.log("AI Response received successfully.");
 
       let genUrl = '';
       if (response.candidates?.[0]?.content?.parts) {
         for (const p of response.candidates[0].content.parts) {
-          if (p.inlineData) { genUrl = `data:image/png;base64,${p.inlineData.data}`; break; }
+          if (p.inlineData) { 
+            genUrl = `data:image/png;base64,${p.inlineData.data}`; 
+            break; 
+          }
         }
       }
+
+      if (!genUrl) {
+        throw new Error("No image data found in AI response.");
+      }
+
       setResult({ url: genUrl, originalUrl: uploaded.url, badge: '8K MASTER' });
       setCredits(0);
       cloudService.lockSystem();
       setIsProcessing(false);
       setCurrentStep(AppState.RESULT);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (e) { 
+    } catch (e: any) { 
       setIsProcessing(false); 
-      console.error(e);
-      alert("Signal Lost. System Reset."); 
+      console.error("MISSION_FAILURE:", e);
+      
+      let errorMsg = "Signal Lost. System Reset.";
+      if (e.message?.includes("API_KEY")) errorMsg = "BŁĄD AUTORYZACJI: Brak klucza API.";
+      else if (e.message?.includes("quota")) errorMsg = "LIMIT OSIĄGNIĘTY: Spróbuj ponownie później.";
+      
+      alert(errorMsg); 
     }
   };
 
@@ -221,9 +253,10 @@ const App: React.FC = () => {
                   <div className="absolute inset-10 border border-blue-500/5 rounded-full animate-[spin_60s_linear_infinite_reverse]" />
                   
                   {isProcessing ? (
-                    <div className="text-center z-10">
+                    <div className="text-center z-10 p-6">
                       <div className="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 mx-auto" />
-                      <span className="mono text-[10px] text-blue-400 tracking-[0.5em] uppercase font-black">SYNTHESIZING...</span>
+                      <div className="mono text-[10px] text-blue-400 tracking-[0.5em] uppercase font-black mb-2 animate-pulse">SYNTHESIZING...</div>
+                      <div className="mono text-[8px] text-blue-400/40 uppercase tracking-[0.2em]">NEURAL LINK ACTIVE</div>
                     </div>
                   ) : (
                     <div className="z-10 w-full h-full">
@@ -265,7 +298,7 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* Workshop Content Sections (Below the fold) */}
+            {/* Workshop Content Sections */}
             <div className="relative z-10 bg-black/20">
               <section ref={manualRef} className="py-32 px-10 flex flex-col items-center">
                 <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter mb-24 text-center leading-none">
@@ -305,7 +338,7 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Workshop Info Panel Overlay */}
+      {/* Info Panel */}
       <AnimatePresence>
         {activeModule && (
           <React.Fragment key="module-overlay">
@@ -344,7 +377,7 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Sticky Command Dock */}
+      {/* Dock */}
       <div className="fixed bottom-0 left-0 w-full z-[150]">
         <div className="w-full h-[1px] bg-blue-500/20" />
         <div className="flex justify-center py-6 px-10 gap-16 bg-black/60 backdrop-blur-3xl border-t border-white/5">
