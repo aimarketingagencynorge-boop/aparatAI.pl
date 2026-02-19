@@ -68,6 +68,7 @@ const App: React.FC = () => {
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [credits, setCredits] = useState(1);
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
 
   const homeRef = useRef<HTMLDivElement>(null);
   const manualRef = useRef<HTMLDivElement>(null);
@@ -76,6 +77,18 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
+    
+    // Check initial API key status
+    const checkKey = async () => {
+        if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
+            const has = await (window as any).aistudio.hasSelectedApiKey();
+            setHasApiKey(has);
+        } else if (process.env.API_KEY) {
+            setHasApiKey(true);
+        }
+    };
+    checkKey();
+    
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -86,44 +99,60 @@ const App: React.FC = () => {
     }, 100);
   }, []);
 
+  const handleKeySelection = async () => {
+    try {
+        if (typeof (window as any).aistudio?.openSelectKey === 'function') {
+            await (window as any).aistudio.openSelectKey();
+            setHasApiKey(true);
+        }
+    } catch (e) {
+        console.error("Key selection failed", e);
+    }
+  };
+
   const handleMainUpload = async (file: File) => {
     if (credits === 0) return;
-    
-    // Safety check for file size (Gemini multimodal limit is usually around 20MB, but let's be safe)
+
+    // Check for API key before proceeding
+    if (!process.env.API_KEY) {
+        const isKeySelected = typeof (window as any).aistudio?.hasSelectedApiKey === 'function' 
+            ? await (window as any).aistudio.hasSelectedApiKey() 
+            : false;
+            
+        if (!isKeySelected) {
+            alert("POŁĄCZENIE WYMAGANE: Wybierz klucz API w oknie, które się pojawi.");
+            await handleKeySelection();
+            // Proceed anyway as per rules, assuming injection
+        }
+    }
+
     if (file.size > 15 * 1024 * 1024) {
       alert("FILE TOO LARGE: Maksymalny rozmiar to 15MB.");
       return;
     }
 
     setIsProcessing(true);
-    console.log("Starting upload sequence for:", file.name);
+    console.log("Initiating Aparat AI High-Resolution Engine...");
 
     try {
       const uploaded = await cloudService.uploadImage(file);
-      console.log("Local processing complete, initiating AI link...");
-
-      if (!process.env.API_KEY) {
-        throw new Error("CRITICAL: API_KEY is not defined in environment.");
-      }
-
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const base64Data = uploaded.url.split(',')[1];
       const mimeType = uploaded.url.split(';')[0].split(':')[1];
 
+      // Using gemini-3-pro-image-preview for high-end product photography synthesis
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3-pro-image-preview',
         contents: {
           parts: [
             { inlineData: { data: base64Data, mimeType: mimeType } },
-            { text: "Professional studio product photography. Cinematic lighting, luxury satin anthracite background, 8k hyper-detailed resolution. Perfect studio floor." }
+            { text: "Luxury professional studio product photography. High-end lighting, cinematic soft shadows. Satin black floor. 8k hyper-realistic resolution. Remove background clutter, keep only the central product." }
           ]
         },
         config: { 
-          imageConfig: { aspectRatio: "1:1" }
+          imageConfig: { aspectRatio: "1:1", imageSize: "1K" }
         }
       });
-
-      console.log("AI Response received successfully.");
 
       let genUrl = '';
       if (response.candidates?.[0]?.content?.parts) {
@@ -135,9 +164,7 @@ const App: React.FC = () => {
         }
       }
 
-      if (!genUrl) {
-        throw new Error("No image data found in AI response.");
-      }
+      if (!genUrl) throw new Error("Synthesis failed: Empty signal.");
 
       setResult({ url: genUrl, originalUrl: uploaded.url, badge: '8K MASTER' });
       setCredits(0);
@@ -147,11 +174,16 @@ const App: React.FC = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e: any) { 
       setIsProcessing(false); 
-      console.error("MISSION_FAILURE:", e);
+      console.error("ENGINE_FAILURE:", e);
       
       let errorMsg = "Signal Lost. System Reset.";
-      if (e.message?.includes("API_KEY")) errorMsg = "BŁĄD AUTORYZACJI: Brak klucza API.";
-      else if (e.message?.includes("quota")) errorMsg = "LIMIT OSIĄGNIĘTY: Spróbuj ponownie później.";
+      if (e.message?.includes("not found")) {
+          alert("BŁĄD KLUCZA: Wybierz klucz API ponownie.");
+          await handleKeySelection();
+          return;
+      }
+      if (e.message?.includes("API_KEY")) errorMsg = "BŁĄD AUTORYZACJI: Połącz klucz API.";
+      else if (e.message?.includes("quota")) errorMsg = "LIMIT OSIĄGNIĘTY: Brak energii w systemie.";
       
       alert(errorMsg); 
     }
@@ -172,6 +204,18 @@ const App: React.FC = () => {
   return (
     <div className="relative min-h-screen w-full text-white selection:bg-blue-600/30 overflow-x-hidden">
       <TechnicalHUD credits={credits} isPro={credits === 0} />
+      
+      {/* API Key Connect Status Overlay for Hub */}
+      {currentStep === AppState.MISSION_HUB && !hasApiKey && !isProcessing && (
+          <div className="fixed top-24 right-10 z-[150] pointer-events-auto">
+              <button 
+                onClick={handleKeySelection}
+                className="px-6 py-2 bg-blue-600/20 border border-blue-500 text-blue-500 mono text-[10px] font-black uppercase tracking-widest rounded-full animate-pulse hover:bg-blue-600 hover:text-white transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)]"
+              >
+                  LINK_CLOUD_KEY_REQUIRED
+              </button>
+          </div>
+      )}
 
       <AnimatePresence mode="wait">
         {currentStep === AppState.LENS && (
@@ -216,7 +260,6 @@ const App: React.FC = () => {
             {/* Main Workshop Canvas */}
             <section ref={homeRef} className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
               
-              {/* SVG Laser Links */}
               {!isMobile && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
                   <defs>
@@ -241,7 +284,6 @@ const App: React.FC = () => {
                 </svg>
               )}
 
-              {/* Central Initiate Core */}
               <motion.div 
                 className="relative z-20 w-[280px] h-[280px] md:w-[450px] md:h-[450px]"
                 animate={activeModule ? { scale: 0.8, filter: 'blur(5px)', opacity: 0.3 } : { scale: 1, filter: 'blur(0px)', opacity: 1 }}
@@ -256,20 +298,19 @@ const App: React.FC = () => {
                     <div className="text-center z-10 p-6">
                       <div className="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 mx-auto" />
                       <div className="mono text-[10px] text-blue-400 tracking-[0.5em] uppercase font-black mb-2 animate-pulse">SYNTHESIZING...</div>
-                      <div className="mono text-[8px] text-blue-400/40 uppercase tracking-[0.2em]">NEURAL LINK ACTIVE</div>
+                      <div className="mono text-[8px] text-blue-400/40 uppercase tracking-[0.2em]">HIGH_RES ENGINE ACTIVE</div>
                     </div>
                   ) : (
                     <div className="z-10 w-full h-full">
                       <DropZone onUpload={handleMainUpload} disabled={credits === 0} />
                       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 mono text-[8px] text-blue-500/60 uppercase tracking-[0.4em] font-bold text-center pointer-events-none logo-font">
-                          APARAT AI // MASTER HD ENGINE
+                          APARAT AI // MASTER PRO ENGINE
                       </div>
                     </div>
                   )}
                 </div>
               </motion.div>
 
-              {/* Orbital Wheels Mapping */}
               <div className={isMobile ? "mt-12 grid grid-cols-2 gap-6 px-8 relative z-30" : "absolute inset-0 pointer-events-none"}>
                 {ORBIT_MODULES.map((m) => {
                   const rad = (m.angle * Math.PI) / 180;
@@ -298,7 +339,6 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* Workshop Content Sections */}
             <div className="relative z-10 bg-black/20">
               <section ref={manualRef} className="py-32 px-10 flex flex-col items-center">
                 <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter mb-24 text-center leading-none">
@@ -338,45 +378,6 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Info Panel */}
-      <AnimatePresence>
-        {activeModule && (
-          <React.Fragment key="module-overlay">
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setActiveModule(null)}
-              className="fixed inset-0 bg-black/90 backdrop-blur-[20px] z-[200] cursor-zoom-out" 
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 50 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 50 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-[95%] max-w-2xl bg-[#080808] border border-blue-500/30 rounded-[60px] p-12 md:p-20 shadow-[0_0_120px_rgba(37,99,235,0.3)]"
-            >
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-blue-500/50" />
-              <div className="mb-10 flex items-center gap-6">
-                <span className="text-6xl">{ORBIT_MODULES.find(m => m.id === activeModule)?.icon}</span>
-                <div>
-                  <h3 className="text-3xl md:text-4xl font-black italic uppercase text-blue-500 leading-none mb-2 italic">
-                    {ORBIT_MODULES.find(m => m.id === activeModule)?.title}
-                  </h3>
-                  <div className="mono text-[10px] text-blue-400 tracking-[0.4em] uppercase opacity-40">SYSTEM_STATUS: {ORBIT_MODULES.find(m => m.id === activeModule)?.status}</div>
-                </div>
-              </div>
-              <p className="text-2xl italic text-white/90 leading-relaxed mb-12 font-light">
-                {ORBIT_MODULES.find(m => m.id === activeModule)?.desc}
-              </p>
-              <button 
-                onClick={() => setActiveModule(null)}
-                className="w-full py-8 bg-blue-600 text-white font-black italic rounded-full uppercase tracking-[0.2em] text-sm hover:bg-blue-500 transition-all shadow-2xl"
-              >
-                ROZUMIEM, POWRÓT DO CORE
-              </button>
-            </motion.div>
-          </React.Fragment>
-        )}
-      </AnimatePresence>
-
       {/* Dock */}
       <div className="fixed bottom-0 left-0 w-full z-[150]">
         <div className="w-full h-[1px] bg-blue-500/20" />
@@ -396,7 +397,6 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Result Display Overlay */}
       <AnimatePresence>
         {currentStep === AppState.RESULT && result && (
           <motion.div 
