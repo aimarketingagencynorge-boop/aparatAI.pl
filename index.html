@@ -33,7 +33,7 @@
         ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.5); }
         ::-webkit-scrollbar-thumb { background: var(--neon-blue); border-radius: 10px; }
 
-        .mono { font-family: 'JetBrains Mono', monospace; text-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+        .mono { font-family: 'JetBrains Mono', monospace; text-shadow: 0 0-10px rgba(59, 130, 246, 0.5); }
         .logo-font { font-family: 'Orbitron', sans-serif; }
         
         /* Layer 1: Deep Nebula */
@@ -104,6 +104,14 @@
         .logo-glow {
             text-shadow: 0 0 15px rgba(96, 165, 250, 0.6);
         }
+
+        #root {
+            position: relative;
+            z-index: 10;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
     </style>
 <script type="importmap">
 {
@@ -123,19 +131,22 @@
     <div class="digital-grid"></div>
     <div class="scanning-line"></div>
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
     <script>
         const starfield = document.getElementById('starfield');
-        for (let i = 0; i < 200; i++) {
-            const star = document.createElement('div');
-            star.style.position = 'absolute';
-            star.style.background = '#ffffff';
-            star.style.borderRadius = '50%';
-            star.style.width = Math.random() * 2 + 'px';
-            star.style.height = star.style.width;
-            star.style.left = Math.random() * 100 + '%';
-            star.style.top = Math.random() * 100 + '%';
-            star.style.opacity = Math.random() * 0.7 + 0.1;
-            starfield.appendChild(star);
+        if (starfield) {
+            for (let i = 0; i < 200; i++) {
+                const star = document.createElement('div');
+                star.style.position = 'absolute';
+                star.style.background = '#ffffff';
+                star.style.borderRadius = '50%';
+                star.style.width = Math.random() * 2 + 'px';
+                star.style.height = star.style.width;
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                star.style.opacity = Math.random() * 0.7 + 0.1;
+                starfield.appendChild(star);
+            }
         }
     </script>
 </body>

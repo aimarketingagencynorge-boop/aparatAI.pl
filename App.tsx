@@ -81,7 +81,9 @@ const App: React.FC = () => {
 
   const handleStartMission = useCallback(() => {
     setCurrentStep(AppState.MISSION_HUB);
-    setTimeout(() => scrollTo(homeRef), 100);
+    setTimeout(() => {
+      homeRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   }, []);
 
   const handleMainUpload = async (file: File) => {
@@ -124,14 +126,19 @@ const App: React.FC = () => {
   };
 
   const scrollTo = (ref: React.RefObject<HTMLDivElement>) => {
-    ref.current?.scrollIntoView({ behavior: 'smooth' });
+    if (currentStep === AppState.LENS) {
+        setCurrentStep(AppState.MISSION_HUB);
+    }
+    setTimeout(() => {
+        ref.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   const isMobile = windowSize.width < 1024;
   const orbitRadius = isMobile ? 180 : 380;
 
   return (
-    <div className="relative min-h-screen w-full text-white selection:bg-blue-600/30">
+    <div className="relative min-h-screen w-full text-white selection:bg-blue-600/30 overflow-x-hidden">
       <TechnicalHUD credits={credits} isPro={credits === 0} />
 
       <AnimatePresence mode="wait">
@@ -141,8 +148,8 @@ const App: React.FC = () => {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ scale: 2, opacity: 0, filter: 'blur(40px)' }}
-            transition={{ duration: 1.2, ease: "circIn" }}
-            className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6 text-center"
+            transition={{ duration: 0.8, ease: "circIn" }}
+            className="fixed inset-0 z-[100] bg-black/40 flex flex-col items-center justify-center p-6 text-center"
           >
             <motion.div 
               animate={{ rotate: 360 }} 
@@ -172,7 +179,7 @@ const App: React.FC = () => {
             key="workshop-screen"
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
-            className="flex flex-col w-full"
+            className="flex flex-col w-full relative z-[50]"
           >
             {/* Main Workshop Canvas */}
             <section ref={homeRef} className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
@@ -272,7 +279,7 @@ const App: React.FC = () => {
                     { t: '4. EKSPORT 8K', d: 'Pobierz gotowe reklamy w formatach 1:1 oraz 9:16 gotowe do publikacji w Social Media.' }
                   ].map((step, i) => (
                     <div key={i} className="p-10 border border-white/5 rounded-[40px] bg-white/5 backdrop-blur-3xl hover:border-blue-500/30 transition-colors">
-                      <div className="text-blue-500 mono text-3xl font-black mb-6">/ 0{i+1}</div>
+                      <div className="text-blue-600 mono text-3xl font-black mb-6">/ 0{i+1}</div>
                       <h3 className="text-2xl font-black italic uppercase mb-4">{step.t}</h3>
                       <p className="text-white/40 italic text-xl leading-relaxed">{step.d}</p>
                     </div>
@@ -301,7 +308,7 @@ const App: React.FC = () => {
       {/* Workshop Info Panel Overlay */}
       <AnimatePresence>
         {activeModule && (
-          <>
+          <React.Fragment key="module-overlay">
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setActiveModule(null)}
@@ -333,7 +340,7 @@ const App: React.FC = () => {
                 ROZUMIEM, POWRÓT DO CORE
               </button>
             </motion.div>
-          </>
+          </React.Fragment>
         )}
       </AnimatePresence>
 
@@ -345,11 +352,11 @@ const App: React.FC = () => {
              <span className="text-2xl group-hover:scale-125 transition-transform duration-300">🏠</span>
              <span className="mono text-[8px] uppercase tracking-widest text-white/40 group-hover:text-blue-500 font-bold">HOME</span>
           </button>
-          <button onClick={() => { if(currentStep === AppState.LENS) setCurrentStep(AppState.MISSION_HUB); setTimeout(() => scrollTo(manualRef), 100); }} className="flex flex-col items-center gap-1 group">
+          <button onClick={() => scrollTo(manualRef)} className="flex flex-col items-center gap-1 group">
              <span className="text-2xl group-hover:scale-125 transition-transform duration-300">📖</span>
              <span className="mono text-[8px] uppercase tracking-widest text-white/40 group-hover:text-blue-500 font-bold">INSTRUKCJA</span>
           </button>
-          <button onClick={() => { if(currentStep === AppState.LENS) setCurrentStep(AppState.MISSION_HUB); setTimeout(() => scrollTo(faqRef), 100); }} className="flex flex-col items-center gap-1 group">
+          <button onClick={() => scrollTo(faqRef)} className="flex flex-col items-center gap-1 group">
              <span className="text-2xl group-hover:scale-125 transition-transform duration-300">❓</span>
              <span className="mono text-[8px] uppercase tracking-widest text-white/40 group-hover:text-blue-500 font-bold">FAQ</span>
           </button>
@@ -360,6 +367,7 @@ const App: React.FC = () => {
       <AnimatePresence>
         {currentStep === AppState.RESULT && result && (
           <motion.div 
+            key="result-overlay"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="fixed inset-0 z-[300] bg-black flex flex-col items-center justify-center p-10 overflow-y-auto"
           >
