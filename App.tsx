@@ -68,7 +68,6 @@ const App: React.FC = () => {
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [credits, setCredits] = useState(1);
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isSimulationMode, setIsSimulationMode] = useState<boolean>(false);
 
   const homeRef = useRef<HTMLDivElement>(null);
@@ -78,16 +77,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', handleResize);
-    
-    const checkKey = async () => {
-        const hasStoredKey = !!process.env.API_KEY;
-        const hasStudioKey = typeof (window as any).aistudio?.hasSelectedApiKey === 'function' 
-            ? await (window as any).aistudio.hasSelectedApiKey() 
-            : false;
-        setHasApiKey(hasStoredKey || hasStudioKey);
-    };
-    checkKey();
-    
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -102,9 +91,8 @@ const App: React.FC = () => {
     try {
         if (typeof (window as any).aistudio?.openSelectKey === 'function') {
             await (window as any).aistudio.openSelectKey();
-            setHasApiKey(true);
         } else {
-            alert("Funkcja wyboru klucza jest dostępna tylko w środowisku AI Studio.");
+            alert("Funkcja wyboru klucza dostępna w AI Studio.");
         }
     } catch (e) {
         console.error("Key selection failed", e);
@@ -114,7 +102,7 @@ const App: React.FC = () => {
   const handleMainUpload = async (file: File) => {
     if (credits === 0) return;
 
-    // Presentation simulation logic
+    // Tryb prezentacyjny / symulacja
     if (isSimulationMode) {
         setIsProcessing(true);
         const uploaded = await cloudService.uploadImage(file);
@@ -129,32 +117,29 @@ const App: React.FC = () => {
             setIsProcessing(false);
             setCurrentStep(AppState.RESULT);
             window.scrollTo({ top: 0, behavior: 'smooth' });
-        }, 3000);
-        return;
-    }
-
-    if (!hasApiKey && !process.env.API_KEY) {
-        alert("BŁĄD SYSTEMU: Brak aktywnego łącza API. Wybierz klucz lub włącz tryb prezentacji.");
-        await handleKeySelection();
+        }, 2500);
         return;
     }
 
     setIsProcessing(true);
     try {
       const uploaded = await cloudService.uploadImage(file);
+      
+      // Inicjalizacja z dostępnym kluczem process.env.API_KEY
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const base64Data = uploaded.url.split(',')[1];
       const mimeType = uploaded.url.split(';')[0].split(':')[1];
 
+      // Używamy modelu gemini-2.5-flash-image, który nie wymaga wymuszonego wyboru klucza przez użytkownika
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
             { inlineData: { data: base64Data, mimeType: mimeType } },
-            { text: "High-end luxury product photography. Studio lighting, soft cinematic shadows, minimalist satin background. 8k quality, professional clean look." }
+            { text: "Professional luxury studio photography. Cinematic lighting, soft shadows, expensive minimalist satin anthracite background. 8k hyper-detailed resolution. Clean studio floor. High-end e-commerce style." }
           ]
         },
-        config: { imageConfig: { aspectRatio: "1:1", imageSize: "1K" } }
+        config: { imageConfig: { aspectRatio: "1:1" } }
       });
 
       let genUrl = '';
@@ -167,33 +152,28 @@ const App: React.FC = () => {
         }
       }
 
-      if (!genUrl) throw new Error("Signal empty.");
+      if (!genUrl) throw new Error("Empty AI response.");
 
-      setResult({ url: genUrl, originalUrl: uploaded.url, badge: '8K MASTER PRO' });
+      setResult({ url: genUrl, originalUrl: uploaded.url, badge: '8K MASTER' });
       setCredits(0);
-      cloudService.lockSystem();
       setIsProcessing(false);
       setCurrentStep(AppState.RESULT);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e: any) { 
       setIsProcessing(false); 
-      console.error("ENGINE_FAILURE:", e);
-      if (e.message?.includes("not found")) {
-          alert("SYSTEM RESET: Klucz API wygasł lub jest nieprawidłowy.");
-          await handleKeySelection();
+      console.error("SYNTHESIS_ERROR:", e);
+      
+      if (e.message?.includes("not found") || e.message?.includes("API_KEY") || e.message?.includes("401")) {
+          alert("BŁĄD AUTORYZACJI: Połącz klucz API w menu bocznym lub włącz tryb DEMO dla prezentacji.");
       } else {
-          alert("BŁĄD KRYTYCZNY: Brak połączenia z serwerem AI. Upewnij się, że masz połączony klucz API.");
+          alert("BŁĄD SYSTEMU: Signal Lost. Spróbuj ponownie za chwilę.");
       }
     }
   };
 
   const scrollTo = (ref: React.RefObject<HTMLDivElement>) => {
-    if (currentStep === AppState.LENS) {
-        setCurrentStep(AppState.MISSION_HUB);
-    }
-    setTimeout(() => {
-        ref.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+    if (currentStep === AppState.LENS) setCurrentStep(AppState.MISSION_HUB);
+    setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
   const isMobile = windowSize.width < 1024;
@@ -203,30 +183,28 @@ const App: React.FC = () => {
     <div className="relative min-h-screen w-full text-white selection:bg-blue-600/30 overflow-x-hidden">
       <TechnicalHUD credits={credits} isPro={credits === 0} />
       
-      {/* Dynamic Key Link & Status HUD Overlay */}
+      {/* Side Control Panel */}
       <div className="fixed top-24 left-10 z-[150] flex flex-col gap-4 pointer-events-auto">
         <div className="flex items-center gap-3 bg-black/60 border border-white/5 px-4 py-2 rounded-full backdrop-blur-xl">
-            <div className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 animate-pulse shadow-[0_0_10px_#ef4444]'}`} />
+            <div className={`w-2 h-2 rounded-full ${process.env.API_KEY ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 animate-pulse'}`} />
             <span className="mono text-[8px] uppercase tracking-widest text-white/60 font-black">
-                {hasApiKey ? 'NEURAL_LINK: ACTIVE' : 'NEURAL_LINK: OFFLINE'}
+                {process.env.API_KEY ? 'NEURAL_LINK: READY' : 'NEURAL_LINK: OFFLINE'}
             </span>
         </div>
         
         {currentStep === AppState.MISSION_HUB && !isProcessing && (
             <div className="flex gap-2">
-                {!hasApiKey && (
-                    <button 
-                        onClick={handleKeySelection}
-                        className="px-6 py-3 bg-blue-600 border border-blue-400 text-white mono text-[9px] font-black uppercase tracking-widest rounded-full hover:scale-105 transition-all shadow-2xl"
-                    >
-                        [ LINK_API_KEY ]
-                    </button>
-                )}
+                <button 
+                    onClick={handleKeySelection}
+                    className="px-6 py-3 bg-blue-600/10 border border-blue-500/30 text-blue-500 mono text-[9px] font-black uppercase tracking-widest rounded-full hover:bg-blue-600 hover:text-white transition-all"
+                >
+                    [ LINK_KEY ]
+                </button>
                 <button 
                     onClick={() => setIsSimulationMode(!isSimulationMode)}
-                    className={`px-6 py-3 border mono text-[9px] font-black uppercase tracking-widest rounded-full transition-all ${isSimulationMode ? 'bg-orange-600 border-orange-400 text-white' : 'bg-black/40 border-white/10 text-white/40 hover:text-white'}`}
+                    className={`px-6 py-3 border mono text-[9px] font-black uppercase tracking-widest rounded-full transition-all ${isSimulationMode ? 'bg-orange-600 border-orange-400 text-white shadow-[0_0_30px_rgba(234,88,12,0.4)]' : 'bg-black/40 border-white/10 text-white/40'}`}
                 >
-                    {isSimulationMode ? 'DEMO_MODE: ON' : 'ENABLE_DEMO'}
+                    {isSimulationMode ? 'PRESENTATION_MODE: ON' : 'ENABLE_DEMO'}
                 </button>
             </div>
         )}
@@ -255,9 +233,9 @@ const App: React.FC = () => {
               </p>
               <button 
                 onClick={handleStartMission} 
-                className="px-16 py-8 bg-white text-black font-black italic rounded-full hover:bg-blue-600 hover:text-white transition-all shadow-[0_0_80px_rgba(255,255,255,0.2)] uppercase tracking-widest text-lg group overflow-hidden relative"
+                className="px-16 py-8 bg-white text-black font-black italic rounded-full hover:bg-blue-600 hover:text-white transition-all shadow-[0_0_80px_rgba(255,255,255,0.2)] uppercase tracking-widest text-lg group"
               >
-                <span className="relative z-10">URUCHOM PROTOKÓŁ</span>
+                URUCHOM PROTOKÓŁ
               </button>
             </div>
           </motion.div>
@@ -280,14 +258,14 @@ const App: React.FC = () => {
                   {isProcessing ? (
                     <div className="text-center z-10 p-6">
                       <div className="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 mx-auto" />
-                      <div className="mono text-[10px] text-blue-400 tracking-[0.5em] uppercase font-black mb-2">SYNTHESIZING...</div>
-                      <div className="mono text-[8px] text-blue-400/40 uppercase tracking-[0.2em]">{isSimulationMode ? 'SIMULATING_NEURAL_PATH' : 'PRO_ENGINE_ACTIVE'}</div>
+                      <div className="mono text-[10px] text-blue-400 tracking-[0.5em] uppercase font-black mb-2 animate-pulse">SYNTHESIZING...</div>
+                      <div className="mono text-[8px] text-blue-400/40 uppercase tracking-[0.2em]">{isSimulationMode ? 'DEMO_PATH: ACTIVE' : 'NEURAL_ENGINE: ACTIVE'}</div>
                     </div>
                   ) : (
                     <div className="z-10 w-full h-full">
                       <DropZone onUpload={handleMainUpload} disabled={credits === 0} />
                       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 mono text-[8px] text-blue-500/60 uppercase tracking-[0.4em] font-bold text-center pointer-events-none logo-font">
-                          APARAT AI // MASTER PRO ENGINE
+                          APARAT AI // MASTER 8K ENGINE
                       </div>
                     </div>
                   )}
@@ -317,6 +295,7 @@ const App: React.FC = () => {
               </div>
             </section>
 
+            {/* Instruction Section */}
             <div className="relative z-10 bg-black/20">
               <section ref={manualRef} className="py-32 px-10 flex flex-col items-center">
                 <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter mb-24 text-center">
@@ -324,10 +303,10 @@ const App: React.FC = () => {
                 </h2>
                 <div className="max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-12">
                   {[
-                    { t: '1. INITIATE CORE', d: 'Wgraj zdjęcie produktu. Neuralna Percepcja zidentyfikuje obiekt i przygotuje dane RAW.' },
+                    { t: '1. INITIATE CORE', d: 'Wgraj zdjęcie produktu. System zidentyfikuje obiekt i przygotuje dane RAW.' },
                     { t: '2. SYNEZJA SCENY', d: 'Silnik nałoży profesjonalne oświetlenie studyjne w jakości Master 8K.' },
                     { t: '3. DNA BRANDU', d: 'System automatycznie dostosuje paletę barw do Twojej identyfikacji wizualnej.' },
-                    { t: '4. EKSPORT 8K', d: 'Pobierz gotowe reklamy w formatach Social Media gotowe do publikacji.' }
+                    { t: '4. EKSPORT 8K', d: 'Pobierz gotowe reklamy Social Media gotowe do publikacji.' }
                   ].map((step, i) => (
                     <div key={i} className="p-10 border border-white/5 rounded-[40px] bg-white/5 backdrop-blur-3xl">
                       <div className="text-blue-600 mono text-3xl font-black mb-6">/ 0{i+1}</div>
@@ -342,6 +321,7 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Dock */}
       <div className="fixed bottom-0 left-0 w-full z-[150]">
         <div className="flex justify-center py-6 px-10 gap-16 bg-black/60 backdrop-blur-3xl border-t border-white/5">
           <button onClick={() => { setCurrentStep(AppState.LENS); setCredits(1); setResult(null); }} className="flex flex-col items-center gap-1 group">
@@ -369,12 +349,11 @@ const App: React.FC = () => {
              <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
                 <div className="space-y-10">
                    <h2 className="text-7xl font-black italic uppercase leading-none tracking-tighter">RENDER <br/><span className="text-blue-500">UKOŃCZONY.</span></h2>
-                   <p className="text-white/50 text-2xl italic leading-relaxed">System zsyntezował dane RAW do formatu <span className="text-blue-500">Aparat AI</span> {result.badge}. Oświetlenie studyjne i cienie zostały nałożone poprawnie.</p>
-                   {result.isExample && <div className="p-4 bg-orange-600/10 border border-orange-500/30 rounded-2xl mono text-[10px] text-orange-500 uppercase tracking-widest">WYNIK SYMULOWANY DLA POTRZEB PREZENTACJI</div>}
+                   <p className="text-white/50 text-2xl italic leading-relaxed">System zsyntezował dane RAW do formatu <span className="text-blue-500">Aparat AI</span> {result.badge}.</p>
+                   {result.isExample && <div className="p-4 bg-orange-600/10 border border-orange-500/30 rounded-2xl mono text-[10px] text-orange-500 uppercase tracking-widest">WYNIK SYMULOWANY (PREZENTACJA)</div>}
                    <div className="flex flex-col gap-6">
-                      <button onClick={() => { setResult(null); setCurrentStep(AppState.MISSION_HUB); setCredits(1); }} className="px-12 py-8 bg-blue-600 rounded-full text-white font-black italic uppercase tracking-widest text-sm">URUCHOM KOLEJNĄ SESJĘ</button>
-                      <button onClick={() => window.open(result.url)} className="px-12 py-6 border border-white/20 rounded-full text-white font-black italic uppercase tracking-widest hover:bg-white/5">POBIERZ MASTER 8K</button>
-                      <button onClick={() => { setResult(null); setCurrentStep(AppState.MISSION_HUB); }} className="mono text-[10px] text-white/40 uppercase tracking-widest underline underline-offset-8">POWRÓT DO WARSZTATU</button>
+                      <button onClick={() => { setResult(null); setCurrentStep(AppState.MISSION_HUB); setCredits(1); }} className="px-12 py-8 bg-blue-600 rounded-full text-white font-black italic uppercase tracking-widest text-sm">NOWA SESJA</button>
+                      <button onClick={() => window.open(result.url)} className="px-12 py-6 border border-white/20 rounded-full text-white font-black italic uppercase tracking-widest hover:bg-white/5">POBIERZ MASTER</button>
                    </div>
                 </div>
                 <div className="aspect-square rounded-[60px] overflow-hidden border-4 border-blue-600/20 shadow-[0_0_80px_rgba(37,99,235,0.2)] bg-blue-900/10">
@@ -385,21 +364,11 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Module Overlay Popup */}
       <AnimatePresence>
         {activeModule && (
           <React.Fragment key="module-overlay">
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setActiveModule(null)}
-              className="fixed inset-0 bg-black/90 backdrop-blur-[20px] z-[200] cursor-zoom-out" 
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 50 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 50 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-[95%] max-w-2xl bg-[#080808] border border-blue-500/30 rounded-[60px] p-12 md:p-20 shadow-[0_0_120px_rgba(37,99,235,0.3)]"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setActiveModule(null)} className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[200] cursor-zoom-out" />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-[95%] max-w-2xl bg-[#080808] border border-blue-500/30 rounded-[60px] p-12 md:p-20 shadow-[0_0_120px_rgba(37,99,235,0.3)]">
               <div className="mb-10 flex items-center gap-6">
                 <span className="text-6xl">{ORBIT_MODULES.find(m => m.id === activeModule)?.icon}</span>
                 <div>
@@ -408,7 +377,7 @@ const App: React.FC = () => {
                 </div>
               </div>
               <p className="text-2xl italic text-white/90 leading-relaxed mb-12">{ORBIT_MODULES.find(m => m.id === activeModule)?.desc}</p>
-              <button onClick={() => setActiveModule(null)} className="w-full py-8 bg-blue-600 text-white font-black italic rounded-full uppercase tracking-[0.2em] text-sm shadow-2xl">ROZUMIEM, POWRÓT</button>
+              <button onClick={() => setActiveModule(null)} className="w-full py-8 bg-blue-600 text-white font-black italic rounded-full uppercase tracking-[0.2em] text-sm shadow-2xl">ROZUMIEM</button>
             </motion.div>
           </React.Fragment>
         )}
