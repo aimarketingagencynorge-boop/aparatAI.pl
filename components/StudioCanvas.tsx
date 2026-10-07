@@ -350,7 +350,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
               <div className="flex gap-2 md:gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 no-scrollbar">
                 <button 
                   onClick={() => handleGenerateVideo(selectedItem.id)}
-                  disabled={selectedItem.isGeneratingVideo || !selectedItem.transformedImage}
+                  disabled={true} title="Animacje są jeszcze w przygotowaniu"
                   className="flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-blue-500 font-black text-[9px] md:text-[10px] uppercase rounded-xl transition-all shadow-xl disabled:opacity-30 whitespace-nowrap"
                 >
                   {selectedItem.isGeneratingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}

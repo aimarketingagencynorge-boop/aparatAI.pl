@@ -10,6 +10,7 @@ interface AIControlsProps {
 }
 
 const AIControls: React.FC<AIControlsProps> = ({ state, setState, t }) => {
+  const [presetSaved,setPresetSaved] = React.useState(false);
   const updateSetting = (key: keyof StudioSettings, value: any) => {
     setState(prev => ({
       ...prev,
@@ -57,7 +58,7 @@ const AIControls: React.FC<AIControlsProps> = ({ state, setState, t }) => {
         <div className="space-y-4">
            <label className="text-[11px] font-black text-zinc-600 uppercase tracking-[0.2em] flex items-center gap-2">
             <Cpu className="w-3.5 h-3.5 text-blue-500" />
-            SILNIK AI (QUOTA BYPASS)
+            SILNIK AI
           </label>
           <div className="flex gap-2">
              <button 
@@ -72,11 +73,11 @@ const AIControls: React.FC<AIControlsProps> = ({ state, setState, t }) => {
               className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${state.settings.modelPreference === 'flash' ? 'bg-amber-600/10 border-amber-500 shadow-xl' : 'bg-zinc-900 border-zinc-800 opacity-50'}`}
              >
                 <ZapOff className={`w-5 h-5 ${state.settings.modelPreference === 'flash' ? 'text-amber-500' : 'text-zinc-600'}`} />
-                <span className="text-[9px] font-black uppercase">FLASH (Unlimited)</span>
+                <span className="text-[9px] font-black uppercase">FLASH (Szybki)</span>
              </button>
           </div>
           <p className="text-[8px] text-zinc-600 font-bold uppercase text-center px-4">
-            Flash zalecany do intensywnych testów serii bez limitów (Quota Bypass).
+            Wybierz jakość Pro albo szybszy silnik Flash.
           </p>
         </div>
 
@@ -261,10 +262,10 @@ const AIControls: React.FC<AIControlsProps> = ({ state, setState, t }) => {
 
       </div>
 
-      <div className="p-5 bg-[#050505] border-t border-zinc-900">
-        <button className="w-full py-4 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl border border-zinc-800 flex items-center justify-center gap-3 transition-all active:scale-95 group shadow-lg">
+      <div className="p-5 bg-[#050505] border-t border-zinc-900"><button className="w-full mb-3 text-blue-400 text-xs" onClick={() => { try { const saved=localStorage.getItem("aparatai-studio-preset"); if(saved) setState(prev=>({...prev,settings:JSON.parse(saved)})); } catch {} }}>Wczytaj zapisane ustawienia</button>
+        <button onClick={() => { localStorage.setItem("aparatai-studio-preset",JSON.stringify(state.settings)); setPresetSaved(true); }} className="w-full py-4 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl border border-zinc-800 flex items-center justify-center gap-3 transition-all active:scale-95 group shadow-lg">
            <Save size={16} className="text-zinc-500 group-hover:text-blue-500" />
-           <span className="text-[11px] font-black uppercase tracking-widest">{t.studio.savePreset}</span>
+           <span className="text-[11px] font-black uppercase tracking-widest">{presetSaved ? "ZAPISANO USTAWIENIA" : t.studio.savePreset}</span>
         </button>
       </div>
     </aside>
