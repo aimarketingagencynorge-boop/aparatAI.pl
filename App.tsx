@@ -14,10 +14,11 @@ const backgrounds = [
   { id: 'dark', name: 'Premium', detail: 'Ciemne tło i światło konturowe', color: '#292a2f' },
 ];
 async function api(path: string, user?: User | null, body?: unknown) {
+  const apiOrigin = ['localhost', '127.0.0.1'].includes(location.hostname) ? '' : 'https://m-j-aparat-ai-profesjonalna-fotografia-produktowa-301238981720.us-west1.run.app';
   const headers: Record<string, string> = {};
   if (body) headers['Content-Type'] = 'application/json';
   if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;
-  const response = await fetch(path, { method: body ? 'POST' : 'GET', headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const response = await fetch(apiOrigin + path, { method: body ? 'POST' : 'GET', headers, ...(body ? { body: JSON.stringify(body) } : {}) });
   const data = await response.json();
   if (!response.ok) throw new Error(`${data.error?.message || 'Usługa jest chwilowo niedostępna.'}${data.error?.requestId ? ` Numer zgłoszenia: ${data.error.requestId}` : ''}`);
   return data;
