@@ -7,6 +7,7 @@ import { GoogleGenAI } from '@google/genai';
 import { createApp, errorHandler, scenes } from './app.mjs';
 import { FirestoreTrialStore, MemoryTrialStore } from './trial-store.mjs';
 import { installAccounts } from './accounts.mjs';
+import { generateStudioBackground, analyzeFoodImage } from './legacy-gemini.mjs';
 
 const localPreview = process.env.LOCAL_PREVIEW === 'true';
 if (localPreview && process.env.NODE_ENV === 'production') throw new Error('Local preview is forbidden in production');
@@ -27,8 +28,12 @@ if (process.env.NODE_ENV === 'production' && (!process.env.APP_ORIGINS || !proce
 const hops = Number(process.env.TRUST_PROXY_HOPS || 0);
 if (!Number.isInteger(hops) || hops < 0 || hops > 5) throw new Error('Invalid TRUST_PROXY_HOPS');
 const ai = localPreview ? null : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const generate = async (bytes, scene) => {
+const generate = async (bytes, scene, legacy) => {
     if (localPreview) return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+    if (legacy) {
+      const analysis = legacy.productName ? { productName: legacy.productName } : null;
+      return generateStudioBackground({ originalImage: `data:image/jpeg;base64,${bytes.toString('base64')}`, transformedImage: legacy.isRefresh ? 'previous-take' : null, analysis }, legacy.settings, legacy.forceFlash);
+    }
     const result = await ai.models.generateContent({
       model: process.env.TRIAL_IMAGE_MODEL || 'gemini-2.5-flash-image',
       contents: { parts: [
@@ -42,7 +47,7 @@ const generate = async (bytes, scene) => {
     return `data:${image.mimeType};base64,${image.data}`;
   };
 const app = createApp({ store, secret, origins, trustProxy: hops || false, localPreview, generate });
-if (db) installAccounts(app, { db, generate, origin: origins[0] });
+if (db) installAccounts(app, { db, generate, analyze: analyzeFoodImage, origin: origins[0] });
 else {
   app.get('/api/plans', (_req, res) => res.json({ plans: [] }));
 }

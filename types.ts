@@ -166,7 +166,13 @@ export const STUDIO_STYLES = [
   { id: 'tokyo-style', label: 'Tokyo Style', description: 'Neon futuristic night, wet asphalt.', prompt: 'cyberpunk neon tokyo night, wet asphalt' },
   { id: 'italian-style', label: 'Italian Style', description: 'Warm oak wood, Mediterranean sun.', prompt: 'warm oak wood, sunny mediterranean rustic kitchen' },
   { id: 'urban-minimalism', label: 'Urban Minimalism', description: 'Clean concrete, architectural shadows.', prompt: 'clean concrete, minimalist architectural shadows' },
-  { id: 'oslo-minimal', label: 'Oslo Minimal', description: 'Scandinavian design, light ash wood.', prompt: 'light ash wood, scandinavian interior' }
+  { id: 'oslo-minimal', label: 'Oslo Minimal', description: 'Scandinavian design, light ash wood.', prompt: 'light ash wood, scandinavian interior' },
+  { id: 'white-packshot', label: 'Biały Packshot', description: 'Czyste białe tło katalogowe i naturalny cień.', prompt: 'pure seamless white e-commerce packshot background, soft contact shadow, clean accurate product photography' },
+  { id: 'marble-studio', label: 'Biały Marmur', description: 'Jasny marmur, subtelne żyłkowanie i elegancki blat.', prompt: 'white marble countertop with subtle grey veining, elegant refined studio setting' },
+  { id: 'natural-linen', label: 'Naturalny Len', description: 'Jasny len i miękkie, naturalne światło.', prompt: 'natural beige linen background, tactile fabric texture, restrained organic commercial styling' },
+  { id: 'warm-wood', label: 'Ciepłe Drewno', description: 'Naturalny dębowy blat i ciepła atmosfera.', prompt: 'warm natural oak wood tabletop, premium natural commercial product setting' },
+  { id: 'pastel-studio', label: 'Pastelowe Studio', description: 'Jasne pastelowe tło i delikatne cienie.', prompt: 'soft pale pastel blue seamless studio backdrop, airy minimalist commercial aesthetic' },
+  { id: 'jewelry-premium', label: 'Biżuteria Premium', description: 'Grafitowe tło i precyzyjne refleksy na detalach.', prompt: 'deep graphite luxury jewelry studio backdrop, precise controlled highlights, refined high-end commercial presentation' }
 ];
 
 export const SOCIAL_STYLES: SocialStyle[] = [

@@ -5,6 +5,7 @@ import { isIP } from 'node:net';
 import sharp from 'sharp';
 import { rateLimit } from 'express-rate-limit';
 import { identity, ApiError } from './trial-store.mjs';
+import { validateLegacyRequest } from './legacy-settings.mjs';
 
 export const scenes = {
   white: 'Clean white seamless product photography background, soft studio lighting, natural contact shadow.',
@@ -61,13 +62,14 @@ export function createApp({ store, secret, generate, origins, trustProxy = false
     let key, reserved = false;
     try {
       if (!isIP(req.ip)) throw new ApiError(503, 'IP_UNAVAILABLE', 'Test jest chwilowo niedostępny.');
-      if (!req.body || !Object.hasOwn(scenes, req.body.scene)) throw new ApiError(400, 'INVALID_SCENE', 'Wybierz dostępne tło.');
+      const legacy = req.body && validateLegacyRequest(req.body);
+      if (!req.body || (!legacy && !Object.hasOwn(scenes, req.body.scene))) throw new ApiError(400, 'INVALID_SCENE', 'Wybierz dostępne tło.');
       key = identity(req.ip, secret);
       if (await store.status(key) !== 'available') throw new ApiError(409, 'TRIAL_USED', 'Darmowy test z tej sieci został już wykorzystany. Zaloguj się, aby kontynuować.');
       const bytes = await validateImage(req.body.image);
       await store.reserve(key, req.requestId); reserved = true;
       logger(JSON.stringify({ event: 'trial_started', requestId: req.requestId, network: key.slice(0, 16), scene: req.body.scene }));
-      const image = await generate(bytes, req.body.scene);
+      const image = await generate(bytes, req.body.scene, legacy);
       await store.complete(key, req.requestId, 'succeeded');
       logger(JSON.stringify({ event: 'trial_succeeded', requestId: req.requestId }));
       res.json({ image, state: 'succeeded', localPreview });
