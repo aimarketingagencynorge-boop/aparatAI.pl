@@ -37,7 +37,14 @@ export function createApp({ store, secret, generate, origins, trustProxy = false
     const started = Date.now();
     res.on('finish', () => logger(JSON.stringify({ event: 'request', requestId: req.requestId, method: req.method, path: req.path, status: res.statusCode, durationMs: Date.now() - started })));
     const origin = req.get('origin');
-    if ((origin && !origins.includes(origin)) || req.get('sec-fetch-site') === 'cross-site') return next(new ApiError(403, 'ORIGIN_BLOCKED', 'To żądanie nie pochodzi ze strony AparatAI.'));
+    if ((origin && !origins.includes(origin)) || (!origin && req.get('sec-fetch-site') === 'cross-site')) return next(new ApiError(403, 'ORIGIN_BLOCKED', 'To żądanie nie pochodzi ze strony AparatAI.'));
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      if (req.method === 'OPTIONS') return res.sendStatus(204);
+    }
     next();
   });
   app.use('/api', rateLimit({ windowMs: 60_000, limit: 30, ipv6Subnet: 64, standardHeaders: 'draft-8', legacyHeaders: false, skip: req => req.path === '/stripe/webhook', validate: { xForwardedForHeader: false }, handler: (_req, _res, next) => next(new ApiError(429, 'RATE_LIMIT', 'Zbyt wiele żądań. Spróbuj ponownie za minutę.')) }));

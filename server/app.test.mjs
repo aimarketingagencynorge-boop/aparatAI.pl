@@ -9,7 +9,7 @@ const image = `data:image/png;base64,${(await sharp({ create: { width: 10, heigh
 async function fixture(t, options = {}) {
   const logs = []; let calls = 0;
   const store = new MemoryTrialStore(options.limit || 50);
-  const app = createApp({ store, secret, origins: ['https://aparatai.pl'], logger: value => logs.push(value), generate: async () => { calls++; if (options.fail) throw new Error('PRIVATE_API_SECRET'); return image; } });
+  const app = createApp({ store, secret, trustProxy: options.trustProxy || false, origins: ['https://aparatai.pl'], logger: value => logs.push(value), generate: async () => { calls++; if (options.fail) throw new Error('PRIVATE_API_SECRET'); return image; } });
   app.use(errorHandler);
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
@@ -43,6 +43,19 @@ test('cross-site requests cannot start a generation', async t => {
   assert.equal((await f.post(undefined, { Origin: 'https://evil.example' })).status, 403);
   assert.equal((await f.post(undefined, { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
   assert.equal(f.calls(), 0);
+});
+test('allowed storefront can preflight and generate directly across origins', async t => {
+  const f = await fixture(t);
+  const response = await fetch(`${f.url}/api/trial`, { method: 'OPTIONS', headers: { Origin: 'https://aparatai.pl', 'Sec-Fetch-Site': 'cross-site' } });
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://aparatai.pl');
+  assert.equal((await f.post(undefined, { Origin: 'https://aparatai.pl', 'Sec-Fetch-Site': 'cross-site' })).status, 200);
+});
+test('one trusted Cloud Run hop ignores client supplied forwarding prefixes', async t => {
+  const f = await fixture(t, { trustProxy: 1 });
+  assert.equal((await f.post(undefined, { 'X-Forwarded-For': '198.51.100.19, 192.0.2.5' })).status, 200);
+  assert.equal((await f.post(undefined, { 'X-Forwarded-For': '198.51.100.20, 192.0.2.5' })).status, 409);
+  assert.equal(f.calls(), 1);
 });
 test('provider failures do not permit unlimited retries or leak private errors', async t => {
   const f = await fixture(t, { fail: true });
