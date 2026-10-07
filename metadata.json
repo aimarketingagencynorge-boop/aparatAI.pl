@@ -1,6 +1,6 @@
 {
-  "name": "Aparat AI",
-  "description": "Zaawansowany interfejs AI do profesjonalnej fotografii produktowej, inspirowany technologią optyczną i interfejsami gamingowymi.",
+  "name": "Mój Aparat AI - Profesjonalna Fotografia Produktowa",
+  "description": "Zmień zwykłe zdjęcia w profesjonalne ujęcia 4K dzięki sztucznej inteligencji i technologii Neural Lighting.",
   "requestFramePermissions": [
     "camera"
   ]

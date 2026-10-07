@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account information including credits and plan.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User's email address."
+        },
+        "credits": {
+          "type": "integer",
+          "description": "Current available credits."
+        },
+        "totalCredits": {
+          "type": "integer",
+          "description": "Total credits ever purchased/granted."
+        },
+        "plan": {
+          "type": "string",
+          "enum": ["free", "pro", "enterprise"],
+          "description": "Current subscription plan."
+        },
+        "uid": {
+          "type": "string",
+          "description": "User's unique identifier."
+        }
+      },
+      "required": ["email", "credits", "totalCredits", "plan", "uid"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user account documents."
+    }
+  }
+}
