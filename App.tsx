@@ -1,389 +1,171 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth, signInWithGoogle, logOut } from './firebaseAuth';
+import { Camera, Aperture, Power, ImagePlus, SlidersHorizontal, Crosshair, Download } from 'lucide-react';
+import './public.css';
+import './camera.css';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { AppState, MissionType, ProcessingResult, Scenography } from './types.ts';
-import { cloudService } from './services/cloudService.ts';
-import TechnicalHUD from './components/TechnicalHUD.tsx';
-import DropZone from './components/DropZone.tsx';
-import { GoogleGenAI } from "@google/genai";
-
-const ORBIT_MODULES = [
-  { 
-    id: 'PERCEPTION' as MissionType, 
-    label: 'NEURALNA PERCEPCJA', 
-    icon: '👁️', 
-    angle: -90, 
-    title: 'NEURALNA PERCEPCJA', 
-    desc: 'Neural Clipping & Scanning. System precyzyjnie identyfikuje produkt, izoluje go od otoczenia i przygotowuje do nowej syntezy.',
-    status: 'SENSORS: ACTIVE'
-  },
-  { 
-    id: 'SCENOGRAPHY' as MissionType, 
-    label: 'SCENOGRAFIA', 
-    icon: '🎬', 
-    angle: -18, 
-    title: 'SYNEZJA SCENOGRAFII', 
-    desc: 'Twoje studio 24/7. System nałoży fizycznie poprawne odbicia, cienie i głębię ostrości w jakości 8K.',
-    status: 'STUDIO: READY'
-  },
-  { 
-    id: 'SOCIAL_LAB' as MissionType, 
-    label: 'SOCIAL MEDIA', 
-    icon: '📱', 
-    angle: 54, 
-    title: 'SOCIAL MEDIA LAB', 
-    desc: 'Automatyczne kadrowanie do formatów 9:16 (TikTok/Reels) i 1:1 (Instagram). Reklama gotowa w 15 sekund.',
-    status: 'FORMATS: OK'
-  },
-  { 
-    id: 'BRAND_LAB' as MissionType, 
-    label: 'BRANDING', 
-    icon: '🧬', 
-    angle: 126, 
-    title: 'BRAND IDENTITY LAB', 
-    desc: 'Dostosuj paletę barw i DNA marki. Aparat AI dba o spójność wizualną Twojej całej oferty.',
-    status: 'DNA: LINKED'
-  },
-  { 
-    id: 'MISSION' as MissionType, 
-    label: 'MENU', 
-    icon: '🚀', 
-    angle: 198, 
-    title: 'MENU WARSZTATU', 
-    desc: 'Poznaj pełną metodologię pracy z naszym silnikiem Neural Engine i zdominuj e-commerce.',
-    status: 'CORE: READY'
-  }
+type TrialState = 'loading' | 'available' | 'processing' | 'succeeded' | 'failed' | 'unavailable';
+type Plan = { id: string; credits: number; amount: number; currency: string };
+type Account = { credits: number; plan: string };
+const backgrounds = [
+  { id: 'white', name: 'Czyste studio', detail: 'Białe tło i miękkie światło', color: '#f3f1ed' },
+  { id: 'beige', name: 'Naturalna aranżacja', detail: 'Ciepły beż i światło z okna', color: '#ccb797' },
+  { id: 'dark', name: 'Premium', detail: 'Ciemne tło i światło konturowe', color: '#292a2f' },
 ];
-
-const FAQS = [
-  { q: 'Czy muszę mieć profesjonalny aparat?', a: 'Nie. Aparat AI optymalizuje surowe pliki z telefonu do jakości renderów studyjnych.' },
-  { q: 'Co jeśli na zdjęciu widać dłoń?', a: 'Neuralna Percepcja automatycznie izoluje produkt i usuwa zbędne elementy.' },
-  { q: 'Jakie formaty obsługuje Social Media Lab?', a: 'TikTok/Reels (9:16), Instagram (1:1) oraz Facebook Ads (16:9).' }
-];
-
-const App: React.FC = () => {
-  const [currentStep, setCurrentStep] = useState<AppState>(AppState.LENS);
-  const [activeModule, setActiveModule] = useState<MissionType | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<ProcessingResult | null>(null);
-  const [credits, setCredits] = useState(1);
-  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const [isSimulationMode, setIsSimulationMode] = useState<boolean>(false);
-
-  const homeRef = useRef<HTMLDivElement>(null);
-  const manualRef = useRef<HTMLDivElement>(null);
-  const faqRef = useRef<HTMLDivElement>(null);
-
+async function api(path: string, user?: User | null, body?: unknown) {
+  const headers: Record<string, string> = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;
+  const response = await fetch(path, { method: body ? 'POST' : 'GET', headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(`${data.error?.message || 'Usługa jest chwilowo niedostępna.'}${data.error?.requestId ? ` Numer zgłoszenia: ${data.error.requestId}` : ''}`);
+  return data;
+}
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [trial, setTrial] = useState<TrialState>('loading');
+  const [localPreview, setLocalPreview] = useState(false);
+  const [original, setOriginal] = useState('');
+  const [result, setResult] = useState('');
+  const [scene, setScene] = useState('white');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [buyBusy, setBuyBusy] = useState('');
+  const [compare, setCompare] = useState(50);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLElement>(null);
+  const locked = busy || (!user && trial !== 'available');
+  const loadTrial = async () => {
+    try { const data = await api('/api/trial'); setTrial(data.state); setLocalPreview(data.localPreview); }
+    catch { setTrial('unavailable'); }
+  };
+  useEffect(() => { void loadTrial(); void api('/api/plans').then(data => setPlans(data.plans || [])).catch(() => {}); }, []);
+  useEffect(() => onAuthStateChanged(auth, current => { setUser(current); setAccount(null); }), []);
   useEffect(() => {
-    const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const handleStartMission = useCallback(() => {
-    setCurrentStep(AppState.MISSION_HUB);
-    setTimeout(() => {
-      homeRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  }, []);
-
-  const handleKeySelection = async () => {
-    try {
-        if (typeof (window as any).aistudio?.openSelectKey === 'function') {
-            await (window as any).aistudio.openSelectKey();
-        } else {
-            alert("Funkcja wyboru klucza dostępna w AI Studio.");
-        }
-    } catch (e) {
-        console.error("Key selection failed", e);
-    }
+    if (!user) return;
+    let active = true;
+    api('/api/account', user).then(data => { if (active) setAccount(data); }).catch(e => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [user]);
+  useEffect(() => {
+    if (!user || new URLSearchParams(location.search).get('payment') !== 'success') return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      if (++attempts > 15) { clearInterval(timer); return; }
+      void api('/api/account', user).then(setAccount).catch(() => {});
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [user]);
+  const login = async () => {
+    setLoginBusy(true); setError('');
+    try { await signInWithGoogle(); }
+    catch { setError('Nie udało się zalogować. Sprawdź, czy przeglądarka pozwala otworzyć okno logowania.'); }
+    finally { setLoginBusy(false); }
   };
-
-  const handleMainUpload = async (file: File) => {
-    if (credits === 0) return;
-
-    // Tryb prezentacyjny / symulacja
-    if (isSimulationMode) {
-        setIsProcessing(true);
-        const uploaded = await cloudService.uploadImage(file);
-        setTimeout(() => {
-            setResult({ 
-                url: uploaded.url, 
-                originalUrl: uploaded.url, 
-                badge: 'SIMULATED MASTER',
-                isExample: true 
-            });
-            setCredits(0);
-            setIsProcessing(false);
-            setCurrentStep(AppState.RESULT);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }, 2500);
-        return;
+  const upload = async (file?: File) => {
+    if (!file || locked) return;
+    setError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError('Wybierz plik JPG, PNG lub WebP o rozmiarze do 5 MB.'); return;
     }
-
-    setIsProcessing(true);
     try {
-      const uploaded = await cloudService.uploadImage(file);
-      
-      // Inicjalizacja z dostępnym kluczem process.env.API_KEY
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const base64Data = uploaded.url.split(',')[1];
-      const mimeType = uploaded.url.split(';')[0].split(':')[1];
-
-      // Używamy modelu gemini-2.5-flash-image, który nie wymaga wymuszonego wyboru klucza przez użytkownika
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            { inlineData: { data: base64Data, mimeType: mimeType } },
-            { text: "Professional luxury studio photography. Cinematic lighting, soft shadows, expensive minimalist satin anthracite background. 8k hyper-detailed resolution. Clean studio floor. High-end e-commerce style." }
-          ]
-        },
-        config: { imageConfig: { aspectRatio: "1:1" } }
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
       });
-
-      let genUrl = '';
-      if (response.candidates?.[0]?.content?.parts) {
-        for (const p of response.candidates[0].content.parts) {
-          if (p.inlineData) { 
-            genUrl = `data:image/png;base64,${p.inlineData.data}`; 
-            break; 
-          }
-        }
-      }
-
-      if (!genUrl) throw new Error("Empty AI response.");
-
-      setResult({ url: genUrl, originalUrl: uploaded.url, badge: '8K MASTER' });
-      setCredits(0);
-      setIsProcessing(false);
-      setCurrentStep(AppState.RESULT);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (e: any) { 
-      setIsProcessing(false); 
-      console.error("SYNTHESIS_ERROR:", e);
-      
-      if (e.message?.includes("not found") || e.message?.includes("API_KEY") || e.message?.includes("401")) {
-          alert("BŁĄD AUTORYZACJI: Połącz klucz API w menu bocznym lub włącz tryb DEMO dla prezentacji.");
-      } else {
-          alert("BŁĄD SYSTEMU: Signal Lost. Spróbuj ponownie za chwilę.");
-      }
+      setOriginal(data); setResult('');
+    } catch { setError('Nie udało się odczytać zdjęcia. Wybierz plik ponownie.'); }
+  };
+  const generate = async () => {
+    if (!original || locked || (user && (!account || account.credits < 1))) return;
+    setBusy(true); setError(''); setResult('');
+    try {
+      const data = await api(user ? '/api/studio' : '/api/trial', user, { image: original, scene });
+      setResult(data.image); setCompare(50);
+      if (!user) setTrial('succeeded');
+    } catch (e: any) { setError(e.message); }
+    finally {
+      setBusy(false);
+      if (!user) void loadTrial();
+      else void api('/api/account', user).then(setAccount).catch(() => {});
     }
   };
-
-  const scrollTo = (ref: React.RefObject<HTMLDivElement>) => {
-    if (currentStep === AppState.LENS) setCurrentStep(AppState.MISSION_HUB);
-    setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  const checkout = async (plan: string) => {
+    if (!user) { await login(); return; }
+    setBuyBusy(plan); setError('');
+    try { const data = await api('/api/checkout', user, { plan }); location.assign(data.url); }
+    catch (e: any) { setError(e.message); setBuyBusy(''); }
   };
-
-  const isMobile = windowSize.width < 1024;
-  const orbitRadius = isMobile ? 180 : 380;
-
-  return (
-    <div className="relative min-h-screen w-full text-white selection:bg-blue-600/30 overflow-x-hidden">
-      <TechnicalHUD credits={credits} isPro={credits === 0} />
-      
-      {/* Side Control Panel */}
-      <div className="fixed top-24 left-10 z-[150] flex flex-col gap-4 pointer-events-auto">
-        <div className="flex items-center gap-3 bg-black/60 border border-white/5 px-4 py-2 rounded-full backdrop-blur-xl">
-            <div className={`w-2 h-2 rounded-full ${process.env.API_KEY ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-red-500 animate-pulse'}`} />
-            <span className="mono text-[8px] uppercase tracking-widest text-white/60 font-black">
-                {process.env.API_KEY ? 'NEURAL_LINK: READY' : 'NEURAL_LINK: OFFLINE'}
-            </span>
-        </div>
-        
-        {currentStep === AppState.MISSION_HUB && !isProcessing && (
-            <div className="flex gap-2">
-                <button 
-                    onClick={handleKeySelection}
-                    className="px-6 py-3 bg-blue-600/10 border border-blue-500/30 text-blue-500 mono text-[9px] font-black uppercase tracking-widest rounded-full hover:bg-blue-600 hover:text-white transition-all"
-                >
-                    [ LINK_KEY ]
-                </button>
-                <button 
-                    onClick={() => setIsSimulationMode(!isSimulationMode)}
-                    className={`px-6 py-3 border mono text-[9px] font-black uppercase tracking-widest rounded-full transition-all ${isSimulationMode ? 'bg-orange-600 border-orange-400 text-white shadow-[0_0_30px_rgba(234,88,12,0.4)]' : 'bg-black/40 border-white/10 text-white/40'}`}
-                >
-                    {isSimulationMode ? 'PRESENTATION_MODE: ON' : 'ENABLE_DEMO'}
-                </button>
-            </div>
-        )}
-      </div>
-
-      <AnimatePresence mode="wait">
-        {currentStep === AppState.LENS && (
-          <motion.div 
-            key="lens-screen" 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ scale: 2, opacity: 0, filter: 'blur(40px)' }}
-            className="fixed inset-0 z-[100] bg-black/40 flex flex-col items-center justify-center p-6 text-center"
-          >
-            <motion.div 
-              animate={{ rotate: 360 }} 
-              transition={{ duration: 100, repeat: Infinity, ease: "linear" }} 
-              className="absolute w-[600px] h-[600px] md:w-[900px] md:h-[900px] border border-blue-600/10 rounded-full pointer-events-none opacity-40" 
-            />
-            <div className="relative z-10 flex flex-col items-center">
-              <h1 className="text-6xl md:text-9xl font-black italic uppercase tracking-tighter leading-none mb-12">
-                <span className="text-blue-500 logo-glow">Aparat</span> <span className="text-white">AI</span>
-              </h1>
-              <p className="text-blue-400/60 mono text-xs md:text-sm tracking-[0.6em] uppercase mb-12 font-bold max-w-lg">
-                NEURALNA SYNTEZA FOTOGRAFII PRODUKTOWEJ MASTER 8K
-              </p>
-              <button 
-                onClick={handleStartMission} 
-                className="px-16 py-8 bg-white text-black font-black italic rounded-full hover:bg-blue-600 hover:text-white transition-all shadow-[0_0_80px_rgba(255,255,255,0.2)] uppercase tracking-widest text-lg group"
-              >
-                URUCHOM PROTOKÓŁ
+  return <div className="site-shell">
+    <header className="site-header">
+      <a href="#" className="wordmark" aria-label="AparatAI — strona główna"><span className="logo-mark"><Camera size={19} /></span>APARAT <span>AI</span><small>.pl</small></a>
+      <nav aria-label="Nawigacja główna"><a href="#jak-to-dziala">Jak to działa</a><a href="#pakiety">Pakiety</a><button className="button button-quiet" disabled={loginBusy || busy} onClick={() => user ? logOut() : login()}>{user ? 'Wyloguj' : loginBusy ? 'Logowanie…' : 'Zaloguj się'}</button></nav>
+    </header>
+    {localPreview && <div className="preview-notice" role="status">Podgląd lokalny: generowanie AI i płatności są wyłączone. Wynik testu pokazuje przesłane zdjęcie.</div>}
+    <main>
+      <section className="camera-hero" aria-label="Aparat AI — interaktywny wizjer">
+        <div className="camera-topline"><span><i className="blue-led" /> APARAT AI / STUDIO PRODUKTOWE</span><span>FOTOGRAFIA DLA SKLEPÓW INTERNETOWYCH</span></div>
+        <div className="camera-body">
+          <div className="body-screw screw-one" /><div className="body-screw screw-two" />
+          <div className="camera-display">
+            <div className="display-grid" /><div className="display-scan" />
+            <div className="viewfinder-corner corner-tl" /><div className="viewfinder-corner corner-tr" /><div className="viewfinder-corner corner-bl" /><div className="viewfinder-corner corner-br" />
+            <div className="display-top"><span><i className="blue-led" /> {busy ? 'WYWOŁYWANIE' : result ? 'UJĘCIE WYWOŁANE' : original ? 'PRODUKT W KADRZE' : 'GOTOWY DO UJĘCIA'}</span><span className="display-mode">FOTO <b>AI</b></span><span className="battery-icon" aria-label="Stan aparatu: aktywny"><i /><i /><i /></span></div>
+            {original ? <div className="display-photo"><img src={result || original} alt={result ? 'Podgląd wywołanego ujęcia w wizjerze aparatu' : 'Twój produkt w wizjerze aparatu'} /><div className="focus-reticle"><Crosshair size={37} /></div>{busy && <div className="processing-overlay"><span className="spinner" /><strong>Wywoływanie ujęcia…</strong></div>}</div> : <div className="lens-scene">
+              <div className="camera-title"><p>PROFESJONALNE STUDIO W TWOICH RĘKACH</p><h1>APARAT <em>AI</em></h1></div>
+              <button className="lens-button" aria-label="Wgraj zdjęcie do aparatu" disabled={locked} onClick={() => fileRef.current?.click()}>
+                <span className="lens-ring ring-outer" /><span className="lens-ring ring-middle" /><span className="lens-ring ring-inner" /><span className="lens-glass"><Camera size={47} strokeWidth={1.4} /><span className="glass-glint" /></span>
+                <span className="lens-inscription inscription-top">APARAT AI · PRODUCT STUDIO</span><span className="lens-inscription inscription-bottom">TWÓJ PRODUKT. TWÓJ KADR.</span>
               </button>
-            </div>
-          </motion.div>
-        )}
-
-        {(currentStep === AppState.MISSION_HUB || currentStep === AppState.RESULT) && (
-          <motion.div 
-            key="workshop-screen"
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            className="flex flex-col w-full relative z-[50]"
-          >
-            <section ref={homeRef} className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
-              <motion.div 
-                className="relative z-20 w-[280px] h-[280px] md:w-[450px] md:h-[450px]"
-                animate={activeModule ? { scale: 0.8, filter: 'blur(5px)', opacity: 0.3 } : { scale: 1, filter: 'blur(0px)', opacity: 1 }}
-              >
-                <div className="absolute inset-0 rounded-full bg-blue-600/10 blur-[100px] animate-pulse" />
-                <div className="w-full h-full rounded-full border-4 border-blue-500/20 bg-black/40 backdrop-blur-3xl flex flex-col items-center justify-center p-8 overflow-hidden shadow-[0_0_80px_rgba(37,99,235,0.2)]">
-                  {isProcessing ? (
-                    <div className="text-center z-10 p-6">
-                      <div className="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 mx-auto" />
-                      <div className="mono text-[10px] text-blue-400 tracking-[0.5em] uppercase font-black mb-2 animate-pulse">SYNTHESIZING...</div>
-                      <div className="mono text-[8px] text-blue-400/40 uppercase tracking-[0.2em]">{isSimulationMode ? 'DEMO_PATH: ACTIVE' : 'NEURAL_ENGINE: ACTIVE'}</div>
-                    </div>
-                  ) : (
-                    <div className="z-10 w-full h-full">
-                      <DropZone onUpload={handleMainUpload} disabled={credits === 0} />
-                      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 mono text-[8px] text-blue-500/60 uppercase tracking-[0.4em] font-bold text-center pointer-events-none logo-font">
-                          APARAT AI // MASTER 8K ENGINE
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-
-              <div className={isMobile ? "mt-12 grid grid-cols-2 gap-6 px-8 relative z-30" : "absolute inset-0 pointer-events-none"}>
-                {ORBIT_MODULES.map((m) => {
-                  const rad = (m.angle * Math.PI) / 180;
-                  const x = isMobile ? 0 : Math.cos(rad) * orbitRadius;
-                  const y = isMobile ? 0 : Math.sin(rad) * orbitRadius;
-                  return (
-                    <motion.div 
-                      key={m.id} 
-                      className={isMobile ? "" : "absolute pointer-events-auto"}
-                      style={!isMobile ? { left: `calc(50% + ${x}px)`, top: `calc(50% + ${y}px)`, transform: 'translate(-50%, -50%)' } : {}}
-                    >
-                      <motion.div 
-                        onClick={() => setActiveModule(m.id)}
-                        className={`w-24 h-24 md:w-32 md:h-32 rounded-full border-2 bg-black/80 backdrop-blur-3xl flex items-center justify-center cursor-pointer transition-all duration-500 group relative shadow-2xl ${activeModule === m.id ? 'border-blue-500 shadow-[0_0_40px_rgba(37,99,235,0.4)]' : 'border-blue-500/20 hover:border-blue-500'}`}
-                      >
-                        <span className="text-3xl md:text-4xl group-hover:scale-110 transition-transform">{m.icon}</span>
-                      </motion.div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* Instruction Section */}
-            <div className="relative z-10 bg-black/20">
-              <section ref={manualRef} className="py-32 px-10 flex flex-col items-center">
-                <h2 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter mb-24 text-center">
-                   INSTRUKCJA <br/> <span className="text-blue-500">DOWODZENIA</span>
-                </h2>
-                <div className="max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-12">
-                  {[
-                    { t: '1. INITIATE CORE', d: 'Wgraj zdjęcie produktu. System zidentyfikuje obiekt i przygotuje dane RAW.' },
-                    { t: '2. SYNEZJA SCENY', d: 'Silnik nałoży profesjonalne oświetlenie studyjne w jakości Master 8K.' },
-                    { t: '3. DNA BRANDU', d: 'System automatycznie dostosuje paletę barw do Twojej identyfikacji wizualnej.' },
-                    { t: '4. EKSPORT 8K', d: 'Pobierz gotowe reklamy Social Media gotowe do publikacji.' }
-                  ].map((step, i) => (
-                    <div key={i} className="p-10 border border-white/5 rounded-[40px] bg-white/5 backdrop-blur-3xl">
-                      <div className="text-blue-600 mono text-3xl font-black mb-6">/ 0{i+1}</div>
-                      <h3 className="text-2xl font-black italic uppercase mb-4">{step.t}</h3>
-                      <p className="text-white/40 italic text-xl leading-relaxed">{step.d}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Dock */}
-      <div className="fixed bottom-0 left-0 w-full z-[150]">
-        <div className="flex justify-center py-6 px-10 gap-16 bg-black/60 backdrop-blur-3xl border-t border-white/5">
-          <button onClick={() => { setCurrentStep(AppState.LENS); setCredits(1); setResult(null); }} className="flex flex-col items-center gap-1 group">
-             <span className="text-2xl group-hover:scale-125 transition-all">🏠</span>
-             <span className="mono text-[8px] uppercase tracking-widest text-white/40 group-hover:text-blue-500 font-bold">HOME</span>
-          </button>
-          <button onClick={() => scrollTo(manualRef)} className="flex flex-col items-center gap-1 group">
-             <span className="text-2xl group-hover:scale-125 transition-all">📖</span>
-             <span className="mono text-[8px] uppercase tracking-widest text-white/40 group-hover:text-blue-500 font-bold">INSTRUKCJA</span>
-          </button>
-          <button onClick={() => scrollTo(faqRef)} className="flex flex-col items-center gap-1 group">
-             <span className="text-2xl group-hover:scale-125 transition-all">❓</span>
-             <span className="mono text-[8px] uppercase tracking-widest text-white/40 group-hover:text-blue-500 font-bold">FAQ</span>
-          </button>
+              <p className="lens-help">Zwykłe zdjęcie z telefonu.<br /><span>Nowe tło, światło i aranżacja.</span></p>
+            </div>}
+            <div className="display-bottom"><span><Crosshair size={13} /> {backgrounds.find(bg => bg.id === scene)?.name.toUpperCase()}</span><span>FORMAT 1:1</span><span>{user ? account ? `${account.credits} UJĘĆ` : 'KONTO…' : trial === 'available' ? '01 / 01 · DARMOWY TEST' : trial === 'loading' ? 'SPRAWDZANIE…' : '00 / 01 · TEST WYKORZYSTANY'}</span></div>
+          </div>
+          <aside className="camera-grip" aria-label="Przyciski aparatu">
+            <div className="grip-ridges" />
+            <button className="camera-power" title={user ? 'Wyloguj' : 'Zaloguj się'} aria-label={user ? 'Wyloguj' : 'Zaloguj się'} disabled={busy || loginBusy} onClick={() => user ? logOut() : login()}><Power size={17} /><i className="blue-led" /></button>
+            <div className="control-label">ARANŻACJA</div>
+            <button className="mode-dial" aria-label="Zmień aranżację" disabled={busy} onClick={() => setScene(backgrounds[(backgrounds.findIndex(bg => bg.id === scene) + 1) % backgrounds.length].id)}><span className="dial-notch" /><Aperture size={31} /><span>{scene === 'white' ? 'STUDIO' : scene === 'beige' ? 'NATURAL' : 'PREMIUM'}</span></button>
+            {result ? <a className="camera-control" href={result} download={result.startsWith('data:image/jpeg') ? 'aparatai-produkt.jpg' : 'aparatai-produkt.png'}><Download size={20} /><span>POBIERZ</span></a> : <button className="camera-control" disabled={locked} onClick={() => fileRef.current?.click()}><ImagePlus size={20} /><span>WGRAJ</span></button>}
+            <button className="camera-control" onClick={() => editorRef.current?.scrollIntoView({ behavior: 'smooth' })}><SlidersHorizontal size={20} /><span>USTAWIENIA</span></button>
+            <div className="control-label shutter-label">SPUST MIGAWKI</div>
+            <button className="shutter-button" aria-label={original ? 'Wywołaj zdjęcie produktu' : 'Wybierz zdjęcie produktu'} disabled={locked || (!!original && !!user && (!account || account.credits < 1))} onClick={() => original ? generate() : fileRef.current?.click()}><span><Camera size={25} /></span></button>
+            <span className="grip-brand">APARAT<span>AI</span></span>
+          </aside>
         </div>
-      </div>
-
-      <AnimatePresence>
-        {currentStep === AppState.RESULT && result && (
-          <motion.div 
-            key="result-overlay"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="fixed inset-0 z-[300] bg-black flex flex-col items-center justify-center p-10 overflow-y-auto"
-          >
-             <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-                <div className="space-y-10">
-                   <h2 className="text-7xl font-black italic uppercase leading-none tracking-tighter">RENDER <br/><span className="text-blue-500">UKOŃCZONY.</span></h2>
-                   <p className="text-white/50 text-2xl italic leading-relaxed">System zsyntezował dane RAW do formatu <span className="text-blue-500">Aparat AI</span> {result.badge}.</p>
-                   {result.isExample && <div className="p-4 bg-orange-600/10 border border-orange-500/30 rounded-2xl mono text-[10px] text-orange-500 uppercase tracking-widest">WYNIK SYMULOWANY (PREZENTACJA)</div>}
-                   <div className="flex flex-col gap-6">
-                      <button onClick={() => { setResult(null); setCurrentStep(AppState.MISSION_HUB); setCredits(1); }} className="px-12 py-8 bg-blue-600 rounded-full text-white font-black italic uppercase tracking-widest text-sm">NOWA SESJA</button>
-                      <button onClick={() => window.open(result.url)} className="px-12 py-6 border border-white/20 rounded-full text-white font-black italic uppercase tracking-widest hover:bg-white/5">POBIERZ MASTER</button>
-                   </div>
-                </div>
-                <div className="aspect-square rounded-[60px] overflow-hidden border-4 border-blue-600/20 shadow-[0_0_80px_rgba(37,99,235,0.2)] bg-blue-900/10">
-                   <img src={result.url} className="w-full h-full object-cover" alt="Result" />
-                </div>
-             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {activeModule && (
-          <React.Fragment key="module-overlay">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setActiveModule(null)} className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[200] cursor-zoom-out" />
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-[95%] max-w-2xl bg-[#080808] border border-blue-500/30 rounded-[60px] p-12 md:p-20 shadow-[0_0_120px_rgba(37,99,235,0.3)]">
-              <div className="mb-10 flex items-center gap-6">
-                <span className="text-6xl">{ORBIT_MODULES.find(m => m.id === activeModule)?.icon}</span>
-                <div>
-                  <h3 className="text-3xl md:text-4xl font-black italic uppercase text-blue-500 mb-2 italic">{ORBIT_MODULES.find(m => m.id === activeModule)?.title}</h3>
-                  <div className="mono text-[10px] text-blue-400 tracking-[0.4em] uppercase opacity-40">STATUS: {ORBIT_MODULES.find(m => m.id === activeModule)?.status}</div>
-                </div>
-              </div>
-              <p className="text-2xl italic text-white/90 leading-relaxed mb-12">{ORBIT_MODULES.find(m => m.id === activeModule)?.desc}</p>
-              <button onClick={() => setActiveModule(null)} className="w-full py-8 bg-blue-600 text-white font-black italic rounded-full uppercase tracking-[0.2em] text-sm shadow-2xl">ROZUMIEM</button>
-            </motion.div>
-          </React.Fragment>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-export default App;
+        <div className="camera-below"><span><i className="blue-led" /> 1 DARMOWE UJĘCIE · BEZ KONTA I KARTY</span><button className="text-button" onClick={() => editorRef.current?.scrollIntoView({ behavior: 'smooth' })}>OTWÓRZ PANEL WYWOŁYWANIA ↓</button></div>
+      </section>
+      <section id="jak-to-dziala" className="steps-section"><p className="eyebrow">INSTRUKCJA APARATU</p><div className="steps">{[['01', 'Wprowadź produkt do kadru', 'Wgraj wyraźne zdjęcie z telefonu, z całym produktem w kadrze.'], ['02', 'Ustaw scenę i światło', 'Wybierz czyste studio, naturalną aranżację lub ciemną scenę premium.'], ['03', 'Wywołaj i pobierz ujęcie', 'Naciśnij spust, porównaj zdjęcia i sprawdź szczegóły przed publikacją.']].map(([n, title, text]) => <article key={n}><span>{n}</span><h3>{title}</h3><p>{text}</p></article>)}</div></section>
+      <section className="trial-section" id="test" ref={editorRef}>
+        <div className="section-title"><div><p className="eyebrow">CIEMNIA AI / PANEL WYWOŁYWANIA</p><h2>{user ? 'Twoja sesja produktowa.' : 'Twoje pierwsze ujęcie.'}</h2></div><span className="count-pill">{user ? account ? `${account.credits} zdjęć na koncie` : 'Ładowanie konta…' : '1 bezpłatne zdjęcie'}</span></div>
+        {user && <p className="account-label">{user.email}</p>}
+        <div className="editor-layout"><div className="image-pane">
+          {!original ? <div className="upload-zone" onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void upload(e.dataTransfer.files[0]); }}><span className="upload-icon" aria-hidden="true">↑</span><h3>Tu zaczyna się Twoje zdjęcie</h3><p>Wybierz plik lub przeciągnij go tutaj.</p><button className="button button-outline" disabled={locked} onClick={() => fileRef.current?.click()}>Wybierz zdjęcie</button><small>JPG, PNG, WebP · do 5 MB</small></div> : <div className="comparison"><img src={result || original} alt={result ? 'Produkt po zmianie tła i światła' : 'Twoje oryginalne zdjęcie produktu'} />{result && <><img className="before-image" style={{ clipPath: `inset(0 ${100 - compare}% 0 0)` }} src={original} alt="Oryginalne zdjęcie przed obróbką" /><div className="compare-divider" style={{ left: `${compare}%` }} /><span className="image-badge before-badge">Przed</span><span className="image-badge after-badge">{localPreview ? 'Podgląd' : 'Po'}</span></>}{busy && <div className="processing-overlay" role="status"><span className="spinner" /><strong>Przygotowujemy Twoją aranżację…</strong><p>Pozostaw tę stronę otwartą.</p></div>}</div>}
+          <input type="file" ref={fileRef} accept="image/jpeg,image/png,image/webp" hidden onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
+          {result && <div className="compare-control"><label htmlFor="compare">Porównaj przed i po</label><input id="compare" type="range" min="0" max="100" value={compare} onChange={e => setCompare(Number(e.target.value))} /></div>}
+          {original && !locked && <button className="text-button" onClick={() => fileRef.current?.click()}>Wybierz inne zdjęcie</button>}
+        </div><div className="editor-controls"><h3>Wybierz aranżację</h3><div className="scene-options" role="group" aria-label="Tło zdjęcia">{backgrounds.map(bg => <button key={bg.id} className={`scene-option ${scene === bg.id ? 'selected' : ''}`} aria-pressed={scene === bg.id} disabled={busy} onClick={() => setScene(bg.id)}><span className="scene-swatch" style={{ background: bg.color }} /><span><strong>{bg.name}</strong><small>{bg.detail}</small></span><span className="scene-check">{scene === bg.id ? '✓' : ''}</span></button>)}</div>
+          <button className="button button-primary generate-button" disabled={!original || locked || (!!user && (!account || account.credits < 1))} onClick={generate}>{busy ? 'Tworzenie ujęcia…' : user ? 'Stwórz zdjęcie · 1 kredyt' : 'Przerób zdjęcie bezpłatnie'}</button>
+          {!user && trial === 'loading' && <p role="status">Sprawdzamy dostępność testu…</p>}
+          {!user && trial === 'unavailable' && <p role="status">Test jest chwilowo niedostępny. <button className="text-button" onClick={loadTrial}>Sprawdź ponownie</button></p>}
+          {!user && ['processing', 'succeeded', 'failed'].includes(trial) && <div className="trial-used" role="status"><strong>{trial === 'failed' ? 'Test nie został ukończony.' : trial === 'processing' ? 'Test z tej sieci jest w trakcie.' : 'Darmowy test został wykorzystany.'}</strong><p>{trial === 'failed' ? 'Nie ponawiamy automatycznie generowania. Zachowaj numer zgłoszenia z komunikatu błędu.' : 'Limit obejmuje jedną próbę z danej sieci. Zaloguj się, aby korzystać z pakietów.'}</p><button className="button button-outline" disabled={loginBusy} onClick={login}>Przejdź do konta</button></div>}
+          {result && <a className="button button-outline download-button" href={result} download={result.startsWith('data:image/jpeg') ? 'aparatai-produkt.jpg' : 'aparatai-produkt.png'}>Pobierz {localPreview ? 'podgląd' : 'zdjęcie'}</a>}
+          <p className="editor-note">{user ? 'Nieudana generacja zwraca kredyt na konto.' : 'Jedna próba na sieć. Odświeżenie strony nie odnawia limitu.'} Zdjęcie wysyłamy do AI wyłącznie po kliknięciu przycisku generowania. Sprawdź etykietę, kolor i kształt produktu przed publikacją.</p>
+        </div></div>{error && <div className="error-message" role="alert">{error}</div>}
+      </section>
+      <section id="pakiety" className="packages-section"><p className="eyebrow">ZDJĘCIA W TWOIM TEMPIE</p><h2>Gotowy na cały katalog?</h2><p>Przetestuj jedno zdjęcie. Pakiety pozwalają tworzyć kolejne aranżacje z własnego konta.</p>
+        {plans.length ? <div className="plan-grid">{plans.map(plan => <article className="plan-card" key={plan.id}><h3>{plan.id === 'starter' ? 'Na start' : 'Dla sklepu'}</h3><strong>{plan.credits} zdjęć</strong><p>{new Intl.NumberFormat('pl-PL', { style: 'currency', currency: plan.currency.toUpperCase() }).format(plan.amount / 100)}</p><button className="button button-primary" disabled={!!buyBusy || loginBusy || (!!user && !account)} onClick={() => checkout(plan.id)}>{buyBusy === plan.id ? 'Przejście do płatności…' : user ? 'Kup pakiet' : 'Zaloguj się, aby kupić'}</button><small>Jednorazowy zakup · bez abonamentu</small></article>)}</div> : <div className="launch-note">Sprzedaż pakietów jest w przygotowaniu. Ceny pojawią się tutaj po uruchomieniu płatności.</div>}
+      </section>
+      <section className="faq-section"><h2>Przed pierwszym zdjęciem</h2>{[
+        ['Czy muszę mieć konto?', 'Darmowy test jednego zdjęcia działa bez konta i karty. Konto jest potrzebne do zakupu i korzystania z pakietów.'],
+        ['Jakie zdjęcie najlepiej wgrać?', 'Wyraźne, z całym produktem w kadrze. Tło nie musi być studyjne. Rozmycie, zasłonięta etykieta i brakujące części produktu mogą pogorszyć wynik.'],
+        ['Czy AI może zmienić produkt?', 'AI może popełnić błąd. Zawsze porównaj wynik z oryginałem, szczególnie napisy, logo, kolor i proporcje.'],
+        ['Dlaczego test jest już wykorzystany?', 'Darmowy test jest przypisany do sieci. Osoby korzystające z tego samego Wi-Fi mogą dzielić limit. Zmiana karty przeglądarki ani odświeżenie nie odnawia próby.'],
+        ['Co dzieje się ze zdjęciem?', 'Przed generowaniem podgląd jest lokalny. Po kliknięciu zdjęcie trafia na serwer i do dostawcy AI. Ta wersja nie zapisuje zdjęć w galerii; pobierz wynik przed zamknięciem strony.'],
+      ].map(([q, a]) => <details key={q}><summary>{q}<span aria-hidden="true">+</span></summary><p>{a}</p></details>)}</section>
+    </main><footer className="site-footer"><a className="wordmark" href="#">aparat<span>ai</span><small>.pl</small></a><p>Zdjęcia i aranżacje dla sklepów internetowych.</p><a href="https://www.tiktok.com/@aparatai.pl" target="_blank" rel="noreferrer">Zobacz AparatAI na TikToku ↗</a></footer>
+  </div>;
+}
