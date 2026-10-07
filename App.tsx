@@ -4,6 +4,7 @@ import { auth, signInWithGoogle, logOut } from './firebaseAuth';
 import { Camera, Aperture, Power, ImagePlus, SlidersHorizontal, Crosshair, Download } from 'lucide-react';
 import './public.css';
 import './camera.css';
+import RestoredStudio from './components/RestoredStudio';
 
 type TrialState = 'loading' | 'available' | 'processing' | 'succeeded' | 'failed' | 'unavailable';
 type Plan = { id: string; credits: number; amount: number; currency: string };
@@ -25,6 +26,9 @@ async function api(path: string, user?: User | null, body?: unknown) {
 }
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [studioStarted, setStudioStarted] = useState(false);
+  useEffect(() => { if(studioOpen) setStudioStarted(true); }, [studioOpen]);
   const [account, setAccount] = useState<Account | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [trial, setTrial] = useState<TrialState>('loading');
@@ -77,23 +81,10 @@ export default function App() {
       const data = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file);
       });
-      setOriginal(data); setResult('');
+      setOriginal(data); setResult(''); setStudioOpen(true);
     } catch { setError('Nie udało się odczytać zdjęcia. Wybierz plik ponownie.'); }
   };
-  const generate = async () => {
-    if (!original || locked || (user && (!account || account.credits < 1))) return;
-    setBusy(true); setError(''); setResult('');
-    try {
-      const data = await api(user ? '/api/studio' : '/api/trial', user, { image: original, scene });
-      setResult(data.image); setCompare(50);
-      if (!user) setTrial('succeeded');
-    } catch (e: any) { setError(e.message); }
-    finally {
-      setBusy(false);
-      if (!user) void loadTrial();
-      else void api('/api/account', user).then(setAccount).catch(() => {});
-    }
-  };
+  const generate = async () => { setStudioOpen(true); };
   const checkout = async (plan: string) => {
     if (!user) { await login(); return; }
     setBuyBusy(plan); setError('');
@@ -101,9 +92,10 @@ export default function App() {
     catch (e: any) { setError(e.message); setBuyBusy(''); }
   };
   return <div className="site-shell">
+    <div style={{display:studioOpen?'block':'none'}}>{studioStarted && <RestoredStudio account={{ credits: account?.credits || 0, totalCredits: account?.credits || 0, plan: (account?.plan || 'free') as any, apiAccess: account?.plan === 'enterprise', isAuthenticated: !!user, uid: user?.uid, email: user?.email || undefined }} initialImage={original} onClose={() => setStudioOpen(false)} onRefresh={() => { if(user) void api('/api/account', user).then(setAccount); else void loadTrial(); }} />}</div>
     <header className="site-header">
       <a href="#" className="wordmark" aria-label="AparatAI — strona główna"><span className="logo-mark"><Camera size={19} /></span>APARAT <span>AI</span><small>.pl</small></a>
-      <nav aria-label="Nawigacja główna"><a href="#jak-to-dziala">Jak to działa</a><a href="#pakiety">Pakiety</a><button className="button button-quiet" disabled={loginBusy || busy} onClick={() => user ? logOut() : login()}>{user ? 'Wyloguj' : loginBusy ? 'Logowanie…' : 'Zaloguj się'}</button></nav>
+      <nav aria-label="Nawigacja główna"><a href="#jak-to-dziala">Jak to działa</a><a href="#pakiety">Pakiety</a><button className="button button-outline" onClick={() => setStudioOpen(true)}>Otwórz studio</button><button className="button button-quiet" disabled={loginBusy || busy} onClick={() => user ? logOut() : login()}>{user ? 'Wyloguj' : loginBusy ? 'Logowanie…' : 'Zaloguj się'}</button></nav>
     </header>
     {localPreview && <div className="preview-notice" role="status">Podgląd lokalny: generowanie AI i płatności są wyłączone. Wynik testu pokazuje przesłane zdjęcie.</div>}
     <main>
@@ -129,17 +121,17 @@ export default function App() {
             <div className="grip-ridges" />
             <button className="camera-power" title={user ? 'Wyloguj' : 'Zaloguj się'} aria-label={user ? 'Wyloguj' : 'Zaloguj się'} disabled={busy || loginBusy} onClick={() => user ? logOut() : login()}><Power size={17} /><i className="blue-led" /></button>
             <div className="control-label">ARANŻACJA</div>
-            <button className="mode-dial" aria-label="Zmień aranżację" disabled={busy} onClick={() => setScene(backgrounds[(backgrounds.findIndex(bg => bg.id === scene) + 1) % backgrounds.length].id)}><span className="dial-notch" /><Aperture size={31} /><span>{scene === 'white' ? 'STUDIO' : scene === 'beige' ? 'NATURAL' : 'PREMIUM'}</span></button>
+            <button className="mode-dial" aria-label="Zmień aranżację" disabled={busy} onClick={() => setStudioOpen(true)}><span className="dial-notch" /><Aperture size={31} /><span>{scene === 'white' ? 'STUDIO' : scene === 'beige' ? 'NATURAL' : 'PREMIUM'}</span></button>
             {result ? <a className="camera-control" href={result} download={result.startsWith('data:image/jpeg') ? 'aparatai-produkt.jpg' : 'aparatai-produkt.png'}><Download size={20} /><span>POBIERZ</span></a> : <button className="camera-control" disabled={locked} onClick={() => fileRef.current?.click()}><ImagePlus size={20} /><span>WGRAJ</span></button>}
-            <button className="camera-control" onClick={() => editorRef.current?.scrollIntoView({ behavior: 'smooth' })}><SlidersHorizontal size={20} /><span>USTAWIENIA</span></button>
+            <button className="camera-control" onClick={() => setStudioOpen(true)}><SlidersHorizontal size={20} /><span>USTAWIENIA</span></button>
             <div className="control-label shutter-label">SPUST MIGAWKI</div>
             <button className="shutter-button" aria-label={original ? 'Wywołaj zdjęcie produktu' : 'Wybierz zdjęcie produktu'} disabled={locked || (!!original && !!user && (!account || account.credits < 1))} onClick={() => original ? generate() : fileRef.current?.click()}><span><Camera size={25} /></span></button>
             <span className="grip-brand">APARAT<span>AI</span></span>
           </aside>
         </div>
-        <div className="camera-below"><span><i className="blue-led" /> 1 DARMOWE UJĘCIE · BEZ KONTA I KARTY</span><button className="text-button" onClick={() => editorRef.current?.scrollIntoView({ behavior: 'smooth' })}>OTWÓRZ PANEL WYWOŁYWANIA ↓</button></div>
+        <div className="camera-below"><span><i className="blue-led" /> 1 DARMOWE UJĘCIE · BEZ KONTA I KARTY</span><button className="text-button" onClick={() => setStudioOpen(true)}>OTWÓRZ PANEL WYWOŁYWANIA ↓</button></div>
       </section>
-      <section id="jak-to-dziala" className="steps-section"><p className="eyebrow">INSTRUKCJA APARATU</p><div className="steps">{[['01', 'Wprowadź produkt do kadru', 'Wgraj wyraźne zdjęcie z telefonu, z całym produktem w kadrze.'], ['02', 'Ustaw scenę i światło', 'Wybierz czyste studio, naturalną aranżację lub ciemną scenę premium.'], ['03', 'Wywołaj i pobierz ujęcie', 'Naciśnij spust, porównaj zdjęcia i sprawdź szczegóły przed publikacją.']].map(([n, title, text]) => <article key={n}><span>{n}</span><h3>{title}</h3><p>{text}</p></article>)}</div></section>
+      <section id="jak-to-dziala" className="steps-section"><p className="eyebrow">INSTRUKCJA APARATU</p><div className="steps">{[['01', 'Wprowadź produkt do kadru', 'Wgraj wyraźne zdjęcie z telefonu, z całym produktem w kadrze.'], ['02', 'Ustaw scenę i światło', 'Otwórz studio: wybierz tło, światło, prezentację, kąt, format i jakość.'], ['03', 'Wywołaj i pobierz ujęcie', 'Naciśnij spust, porównaj zdjęcia i sprawdź szczegóły przed publikacją.']].map(([n, title, text]) => <article key={n}><span>{n}</span><h3>{title}</h3><p>{text}</p></article>)}</div></section>
       <section className="trial-section" id="test" ref={editorRef}>
         <div className="section-title"><div><p className="eyebrow">CIEMNIA AI / PANEL WYWOŁYWANIA</p><h2>{user ? 'Twoja sesja produktowa.' : 'Twoje pierwsze ujęcie.'}</h2></div><span className="count-pill">{user ? account ? `${account.credits} zdjęć na koncie` : 'Ładowanie konta…' : '1 bezpłatne zdjęcie'}</span></div>
         {user && <p className="account-label">{user.email}</p>}
@@ -148,7 +140,7 @@ export default function App() {
           <input type="file" ref={fileRef} accept="image/jpeg,image/png,image/webp" hidden onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
           {result && <div className="compare-control"><label htmlFor="compare">Porównaj przed i po</label><input id="compare" type="range" min="0" max="100" value={compare} onChange={e => setCompare(Number(e.target.value))} /></div>}
           {original && !locked && <button className="text-button" onClick={() => fileRef.current?.click()}>Wybierz inne zdjęcie</button>}
-        </div><div className="editor-controls"><h3>Wybierz aranżację</h3><div className="scene-options" role="group" aria-label="Tło zdjęcia">{backgrounds.map(bg => <button key={bg.id} className={`scene-option ${scene === bg.id ? 'selected' : ''}`} aria-pressed={scene === bg.id} disabled={busy} onClick={() => setScene(bg.id)}><span className="scene-swatch" style={{ background: bg.color }} /><span><strong>{bg.name}</strong><small>{bg.detail}</small></span><span className="scene-check">{scene === bg.id ? '✓' : ''}</span></button>)}</div>
+        </div><div className="editor-controls"><h3>Pełny proces fotografii produktu</h3><p>15 teł, 4 ustawienia światła, 6 sposobów prezentacji, kąt widzenia, format, jakość oraz własne korekty. Wszystkie ustawienia znajdziesz w studiu.</p>
           <button className="button button-primary generate-button" disabled={!original || locked || (!!user && (!account || account.credits < 1))} onClick={generate}>{busy ? 'Tworzenie ujęcia…' : user ? 'Stwórz zdjęcie · 1 kredyt' : 'Przerób zdjęcie bezpłatnie'}</button>
           {!user && trial === 'loading' && <p role="status">Sprawdzamy dostępność testu…</p>}
           {!user && trial === 'unavailable' && <p role="status">Test jest chwilowo niedostępny. <button className="text-button" onClick={loadTrial}>Sprawdź ponownie</button></p>}

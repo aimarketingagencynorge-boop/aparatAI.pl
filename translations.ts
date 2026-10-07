@@ -4,7 +4,7 @@ import { Language } from './types';
 // Added missing Norwegian (no) and Russian (ru) translations to fulfill the Language type requirements
 export const translations: Record<Language, any> = {
   pl: {
-    appName: "Mój Aparat",
+    appName: "AparatAI",
     tagline: "Twoje inteligentne studio w kieszeni",
     freeOffer: "Pierwsze 20 ujęć w prezencie",
     ctaStart: "Uruchom Obiektyw",

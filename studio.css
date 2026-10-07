@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.restored-studio { position:fixed; inset:0; z-index:100; display:flex; flex-direction:column; background:#050505; color:#f4f4f5; font-family:Arial,sans-serif; }
+.restored-studio h2,.restored-studio h3 { font-family:inherit; }
+.restored-studio .studio-header { display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid #26354c; background:#090e16; }
+.restored-studio .studio-header strong { color:#60a5fa; margin-right:auto; }
+.restored-studio .studio-header button { padding:8px 14px; border:1px solid #334155; border-radius:8px; }
+.restored-studio .studio-workspace { display:flex; flex:1; min-height:0; overflow:hidden; }
+.restored-studio .studio-settings { width:340px; flex-shrink:0; }
+.restored-studio .studio-status { padding:8px 20px; font-size:12px; color:#93c5fd; border-top:1px solid #26354c; }
+@media(max-width:1279px) { .restored-studio .studio-settings { position:absolute; right:0; top:62px; bottom:32px; z-index:60; box-shadow:-20px 0 60px #000a; } .restored-studio .studio-settings.closed { display:none; } }
