@@ -5,8 +5,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { ApiError } from './trial-store.mjs';
 import { scenes, validateImage } from './app.mjs';
+import { validateLegacyRequest } from './legacy-settings.mjs';
 
-export function installAccounts(app, { db, generate, origin, stripeClient, verifyToken = token => getAuth().verifyIdToken(token, true), configuredPlans, webhookSecret = process.env.STRIPE_WEBHOOK_SECRET }) {
+export function installAccounts(app, { db, generate, analyze, origin, stripeClient, verifyToken = token => getAuth().verifyIdToken(token, true), configuredPlans, webhookSecret = process.env.STRIPE_WEBHOOK_SECRET }) {
   const stripe = stripeClient === undefined ? (process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null) : stripeClient;
   const plans = configuredPlans || [
     { id: 'starter', credits: 100, price: process.env.STRIPE_STARTER_PRICE_ID },
@@ -86,13 +87,23 @@ export function installAccounts(app, { db, generate, origin, stripeClient, verif
       res.json({ url: session.url });
     } catch (e) { next(e); }
   });
+  app.post('/api/studio/analyze', authenticate, async (req, res, next) => {
+    try {
+      const user = await db.collection('users').doc(req.account.uid).get();
+      if (!user.exists || user.data().credits < 1) throw new ApiError(402,'NO_CREDITS','Brak zdjęć na koncie.');
+      const image = await validateImage(req.body?.image);
+      if (!analyze) throw new ApiError(503,'ANALYSIS_UNAVAILABLE','Analiza jest chwilowo niedostępna.');
+      res.json({ analysis: await analyze(image.toString('base64')) });
+    } catch(e) { next(e); }
+  });
   app.post('/api/studio', authenticate, async (req, res, next) => {
     const jobId = randomUUID();
     const userRef = db.collection('users').doc(req.account.uid);
     const jobRef = db.collection('generationJobs').doc(jobId);
     let reserved = false;
     try {
-      if (!req.body || !Object.hasOwn(scenes, req.body.scene)) throw new ApiError(400, 'INVALID_SCENE', 'Wybierz dostępne tło.');
+      const legacy = req.body && validateLegacyRequest(req.body);
+      if (!req.body || (!legacy && !Object.hasOwn(scenes, req.body.scene))) throw new ApiError(400, 'INVALID_SCENE', 'Wybierz dostępne tło.');
       const image = await validateImage(req.body.image);
       await db.runTransaction(async tx => {
         const user = await tx.get(userRef);
@@ -103,7 +114,7 @@ export function installAccounts(app, { db, generate, origin, stripeClient, verif
         tx.create(jobRef, { uid: req.account.uid, state: 'processing', createdAt: new Date().toISOString() });
       }); reserved = true;
       console.log(JSON.stringify({ event: 'studio_started', requestId: req.requestId, jobId }));
-      const result = await generate(image, req.body.scene);
+      const result = await generate(image, req.body.scene, legacy);
       await db.runTransaction(async tx => {
         const user = await tx.get(userRef);
         tx.update(jobRef, { state: 'succeeded', finishedAt: new Date().toISOString() });

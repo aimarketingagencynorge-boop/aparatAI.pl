@@ -9,7 +9,7 @@ const image = `data:image/png;base64,${(await sharp({ create: { width: 10, heigh
 async function fixture(t, options = {}) {
   const logs = []; let calls = 0;
   const store = new MemoryTrialStore(options.limit || 50);
-  const app = createApp({ store, secret, trustProxy: options.trustProxy || false, origins: ['https://aparatai.pl'], logger: value => logs.push(value), generate: async () => { calls++; if (options.fail) throw new Error('PRIVATE_API_SECRET'); return image; } });
+  const app = createApp({ store, secret, trustProxy: options.trustProxy || false, origins: ['https://aparatai.pl'], logger: value => logs.push(value), generate: async (...args) => { calls++; options.capture?.(args); if (options.fail) throw new Error('PRIVATE_API_SECRET'); return image; } });
   app.use(errorHandler);
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
@@ -37,6 +37,17 @@ test('invalid file and scene do not consume trial', async t => {
   assert.equal((await f.post({ image: 'data:image/png;base64,aGVsbG8=', scene: 'white' })).status, 400);
   assert.equal((await f.post({ image, scene: '__proto__' })).status, 400);
   assert.equal((await f.post()).status, 200);
+});
+
+test('full original studio settings reach generation; invalid model is rejected before trial reservation', async t => {
+  let received;
+  const f = await fixture(t, { capture: args => {received=args[2];} });
+  const settings = {backgroundStyle:'tokyo-style',lightingType:'dramatic-noir',angle:'macro-focus',quality:'4k',aspectRatio:'16:9',presentationType:'model',refinementText:'Usuń zagniecenia tła',modelPreference:'pro'};
+  assert.equal((await f.post({image,settings:{...settings,modelPreference:'arbitrary-expensive-model'}})).status,400);
+  assert.equal(f.calls(),0);
+  assert.equal((await f.post({image,settings,productName:'Produkt testowy',isRefresh:true,forceFlash:true})).status,200);
+  assert.deepEqual(received,{settings,productName:'Produkt testowy',isRefresh:true,forceFlash:true});
+  assert.equal((await f.post({image,settings})).status,409);
 });
 test('cross-site requests cannot start a generation', async t => {
   const f = await fixture(t);
