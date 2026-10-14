@@ -1,5 +1,5 @@
 
-import { UploadedFile } from '../types';
+interface UploadedFile { name: string; url: string; timestamp: number; }
 
 /**
  * Placeholder service for Cloud Storage / Firebase integration.
