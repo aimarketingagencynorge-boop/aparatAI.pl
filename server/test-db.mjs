@@ -15,7 +15,7 @@ export class TestDB {
         const updated = type === 'update' ? { ...previous } : {};
         for (const [field, value] of Object.entries(data)) {
           if (value?.isEqual?.(FieldValue.delete())) { delete updated[field]; continue; }
-          const increment = [-1, 1, 100, 500].find(n => value?.isEqual?.(FieldValue.increment(n)));
+          const increment = [-20, -10, -1, 1, 10, 20, 50, 100, 500].find(n => value?.isEqual?.(FieldValue.increment(n)));
           updated[field] = increment !== undefined ? (updated[field] || 0) + increment : value;
         }
         this.documents.set(key, updated);

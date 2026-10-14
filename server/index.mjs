@@ -8,6 +8,7 @@ import { createApp, errorHandler, scenes } from './app.mjs';
 import { FirestoreTrialStore, MemoryTrialStore } from './trial-store.mjs';
 import { installAccounts } from './accounts.mjs';
 import { generateStudioBackground, analyzeFoodImage } from './legacy-gemini.mjs';
+import { createVideoProvider } from './video.mjs';
 
 const localPreview = process.env.LOCAL_PREVIEW === 'true';
 if (localPreview && process.env.NODE_ENV === 'production') throw new Error('Local preview is forbidden in production');
@@ -47,9 +48,10 @@ const generate = async (bytes, scene, legacy) => {
     return `data:${image.mimeType};base64,${image.data}`;
   };
 const app = createApp({ store, secret, origins, trustProxy: hops || false, localPreview, generate });
-if (db) installAccounts(app, { db, generate, analyze: analyzeFoodImage, origin: origins[0] });
+if (db) installAccounts(app, { db, generate, analyze: analyzeFoodImage, origin: origins[0], paypal: null, videoProvider: createVideoProvider(ai, process.env.GEMINI_API_KEY) });
 else {
   app.get('/api/plans', (_req, res) => res.json({ plans: [] }));
+  app.get('/api/studio/capabilities', (_req, res) => res.json({ photoCredits: 1, videoEnabled: false, videoCredits: 10, videoSeconds: 8, videoResolution: '1080p' }));
 }
 app.use('/api', (_req, res) => res.status(404).json({ error: { message: 'Nieznana funkcja API.' } }));
 app.use(express.static(resolve('dist')));
