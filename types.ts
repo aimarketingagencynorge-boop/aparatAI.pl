@@ -21,6 +21,8 @@ export interface UserAccount {
   isAuthenticated?: boolean;
   uid?: string;
   email?: string;
+  videoEnabled?: boolean;
+  videoCredits?: number;
 }
 
 export interface SystemLog {

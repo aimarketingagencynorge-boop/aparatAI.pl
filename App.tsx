@@ -7,7 +7,7 @@ import './camera.css';
 import RestoredStudio from './components/RestoredStudio';
 
 type TrialState = 'loading' | 'available' | 'processing' | 'succeeded' | 'failed' | 'unavailable';
-type Plan = { id: string; credits: number; amount: number; currency: string };
+type Plan = { id: string; credits: number; amount: number; currency: string; methods: ('stripe'|'paypal')[] };
 type Account = { credits: number; plan: string };
 const backgrounds = [
   { id: 'white', name: 'Czyste studio', detail: 'Białe tło i miękkie światło', color: '#f3f1ed' },
@@ -31,6 +31,7 @@ export default function App() {
   useEffect(() => { if(studioOpen) setStudioStarted(true); }, [studioOpen]);
   const [account, setAccount] = useState<Account | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [paymentsTestMode,setPaymentsTestMode]=useState(false);
   const [trial, setTrial] = useState<TrialState>('loading');
   const [localPreview, setLocalPreview] = useState(false);
   const [original, setOriginal] = useState('');
@@ -40,6 +41,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
   const [buyBusy, setBuyBusy] = useState('');
+  const [paymentStatus,setPaymentStatus]=useState('');
+  const [paymentRetry,setPaymentRetry]=useState(0);
   const [compare, setCompare] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLElement>(null);
@@ -48,8 +51,9 @@ export default function App() {
     try { const data = await api('/api/trial'); setTrial(data.state); setLocalPreview(data.localPreview); }
     catch { setTrial('unavailable'); }
   };
-  useEffect(() => { void loadTrial(); void api('/api/plans').then(data => setPlans(data.plans || [])).catch(() => {}); }, []);
+  useEffect(() => { void loadTrial(); }, []);
   useEffect(() => onAuthStateChanged(auth, current => { setUser(current); setAccount(null); }), []);
+  useEffect(()=>{let active=true;void api('/api/plans',user).then(data=>{if(active){setPlans(data.plans||[]);setPaymentsTestMode(data.testMode===true);}}).catch(()=>{});return()=>{active=false;};},[user]);
   useEffect(() => {
     if (!user) return;
     let active = true;
@@ -57,14 +61,23 @@ export default function App() {
     return () => { active = false; };
   }, [user]);
   useEffect(() => {
-    if (!user || new URLSearchParams(location.search).get('payment') !== 'success') return;
-    let attempts = 0;
-    const timer = setInterval(() => {
-      if (++attempts > 15) { clearInterval(timer); return; }
-      void api('/api/account', user).then(setAccount).catch(() => {});
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [user]);
+    const params=new URLSearchParams(location.search);
+    if(params.get('payment')==='cancelled'){setPaymentStatus('Płatność anulowana. Kredyty nie zostały doliczone.');return;}
+    if(!user || !['success','paypal'].includes(params.get('payment') || ''))return;
+    let active=true;let timer:ReturnType<typeof setTimeout>;let attempts=0;
+    const confirm=async()=>{
+      setPaymentStatus('Potwierdzamy płatność i dodajemy kredyty…');
+      try{
+        const paypal=params.get('payment')==='paypal';
+        const result=await api(paypal?'/api/paypal/confirm':'/api/checkout/confirm',user,paypal?{orderId:params.get('token')}:{sessionId:params.get('session_id')});
+        if(!active)return;
+        if(result.status==='credited'){setAccount(await api('/api/account',user));setPaymentStatus('Płatność potwierdzona. Kredyty są już na Twoim koncie.');history.replaceState(null,'',location.pathname+'#pakiety');}
+        else if(++attempts<12){timer=setTimeout(confirm,5000);}
+        else setPaymentStatus('Płatność oczekuje na potwierdzenie. Możesz sprawdzić ponownie.');
+      }catch(e:any){if(active)setPaymentStatus(e.message+' Możesz sprawdzić ponownie.');}
+    };void confirm();
+    return()=>{active=false;clearTimeout(timer);};
+  },[user,paymentRetry]);
   const login = async () => {
     setLoginBusy(true); setError('');
     try { await signInWithGoogle(); }
@@ -85,10 +98,10 @@ export default function App() {
     } catch { setError('Nie udało się odczytać zdjęcia. Wybierz plik ponownie.'); }
   };
   const generate = async () => { setStudioOpen(true); };
-  const checkout = async (plan: string) => {
+  const checkout = async (plan: string, method:'stripe'|'paypal'='stripe') => {
     if (!user) { await login(); return; }
-    setBuyBusy(plan); setError('');
-    try { const data = await api('/api/checkout', user, { plan }); location.assign(data.url); }
+    setBuyBusy(plan+method); setError('');
+    try { const data = await api(method==='paypal'?'/api/paypal/checkout':'/api/checkout', user, { plan }); location.assign(data.url); }
     catch (e: any) { setError(e.message); setBuyBusy(''); }
   };
   return <div className="site-shell">
@@ -115,7 +128,7 @@ export default function App() {
               </button>
               <p className="lens-help">Zwykłe zdjęcie z telefonu.<br /><span>Nowe tło, światło i aranżacja.</span></p>
             </div>}
-            <div className="display-bottom"><span><Crosshair size={13} /> {backgrounds.find(bg => bg.id === scene)?.name.toUpperCase()}</span><span>FORMAT 1:1</span><span>{user ? account ? `${account.credits} UJĘĆ` : 'KONTO…' : trial === 'available' ? '01 / 01 · DARMOWY TEST' : trial === 'loading' ? 'SPRAWDZANIE…' : '00 / 01 · TEST WYKORZYSTANY'}</span></div>
+            <div className="display-bottom"><span><Crosshair size={13} /> {backgrounds.find(bg => bg.id === scene)?.name.toUpperCase()}</span><span>FORMAT 1:1</span><span>{user ? account ? `${account.credits} KREDYTÓW` : 'KONTO…' : trial === 'available' ? '01 / 01 · DARMOWY TEST' : trial === 'loading' ? 'SPRAWDZANIE…' : '00 / 01 · TEST WYKORZYSTANY'}</span></div>
           </div>
           <aside className="camera-grip" aria-label="Przyciski aparatu">
             <div className="grip-ridges" />
@@ -133,7 +146,7 @@ export default function App() {
       </section>
       <section id="jak-to-dziala" className="steps-section"><p className="eyebrow">INSTRUKCJA APARATU</p><div className="steps">{[['01', 'Wprowadź produkt do kadru', 'Wgraj wyraźne zdjęcie z telefonu, z całym produktem w kadrze.'], ['02', 'Ustaw scenę i światło', 'Otwórz studio: wybierz tło, światło, prezentację, kąt, format i jakość.'], ['03', 'Wywołaj i pobierz ujęcie', 'Naciśnij spust, porównaj zdjęcia i sprawdź szczegóły przed publikacją.']].map(([n, title, text]) => <article key={n}><span>{n}</span><h3>{title}</h3><p>{text}</p></article>)}</div></section>
       <section className="trial-section" id="test" ref={editorRef}>
-        <div className="section-title"><div><p className="eyebrow">CIEMNIA AI / PANEL WYWOŁYWANIA</p><h2>{user ? 'Twoja sesja produktowa.' : 'Twoje pierwsze ujęcie.'}</h2></div><span className="count-pill">{user ? account ? `${account.credits} zdjęć na koncie` : 'Ładowanie konta…' : '1 bezpłatne zdjęcie'}</span></div>
+        <div className="section-title"><div><p className="eyebrow">CIEMNIA AI / PANEL WYWOŁYWANIA</p><h2>{user ? 'Twoja sesja produktowa.' : 'Twoje pierwsze ujęcie.'}</h2></div><span className="count-pill">{user ? account ? `${account.credits} kredytów na koncie` : 'Ładowanie konta…' : '1 bezpłatne zdjęcie'}</span></div>
         {user && <p className="account-label">{user.email}</p>}
         <div className="editor-layout"><div className="image-pane">
           {!original ? <div className="upload-zone" onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void upload(e.dataTransfer.files[0]); }}><span className="upload-icon" aria-hidden="true">↑</span><h3>Tu zaczyna się Twoje zdjęcie</h3><p>Wybierz plik lub przeciągnij go tutaj.</p><button className="button button-outline" disabled={locked} onClick={() => fileRef.current?.click()}>Wybierz zdjęcie</button><small>JPG, PNG, WebP · do 5 MB</small></div> : <div className="comparison"><img src={result || original} alt={result ? 'Produkt po zmianie tła i światła' : 'Twoje oryginalne zdjęcie produktu'} />{result && <><img className="before-image" style={{ clipPath: `inset(0 ${100 - compare}% 0 0)` }} src={original} alt="Oryginalne zdjęcie przed obróbką" /><div className="compare-divider" style={{ left: `${compare}%` }} /><span className="image-badge before-badge">Przed</span><span className="image-badge after-badge">{localPreview ? 'Podgląd' : 'Po'}</span></>}{busy && <div className="processing-overlay" role="status"><span className="spinner" /><strong>Przygotowujemy Twoją aranżację…</strong><p>Pozostaw tę stronę otwartą.</p></div>}</div>}
@@ -150,7 +163,9 @@ export default function App() {
         </div></div>{error && <div className="error-message" role="alert">{error}</div>}
       </section>
       <section id="pakiety" className="packages-section"><p className="eyebrow">ZDJĘCIA W TWOIM TEMPIE</p><h2>Gotowy na cały katalog?</h2><p>Przetestuj jedno zdjęcie. Pakiety pozwalają tworzyć kolejne aranżacje z własnego konta.</p>
-        {plans.length ? <div className="plan-grid">{plans.map(plan => <article className="plan-card" key={plan.id}><h3>{plan.id === 'starter' ? 'Na start' : 'Dla sklepu'}</h3><strong>{plan.credits} zdjęć</strong><p>{new Intl.NumberFormat('pl-PL', { style: 'currency', currency: plan.currency.toUpperCase() }).format(plan.amount / 100)}</p><button className="button button-primary" disabled={!!buyBusy || loginBusy || (!!user && !account)} onClick={() => checkout(plan.id)}>{buyBusy === plan.id ? 'Przejście do płatności…' : user ? 'Kup pakiet' : 'Zaloguj się, aby kupić'}</button><small>Jednorazowy zakup · bez abonamentu</small></article>)}</div> : <div className="launch-note">Sprzedaż pakietów jest w przygotowaniu. Ceny pojawią się tutaj po uruchomieniu płatności.</div>}
+        {paymentsTestMode && plans.length>0 && <div className="preview-notice" role="status">Płatności testowe Stripe — bez prawdziwej opłaty. Dostępne tylko dla konta testującego.</div>}
+        {paymentStatus && <div role="status" className="launch-note">{paymentStatus} {paymentStatus.includes('ponownie') && <button className="button button-outline" onClick={()=>setPaymentRetry(x=>x+1)}>Sprawdź płatność ponownie</button>}</div>}
+        {plans.length ? <div className="plan-grid">{plans.map(plan => <article className="plan-card" key={plan.id}><h3>{plan.id === 'mini' ? 'Na próbę' : plan.id === 'starter' ? 'Na start' : plan.id==='pro'?'Dla sklepu':plan.id}</h3><strong>{plan.credits} kredytów</strong><p>{new Intl.NumberFormat('pl-PL', { style: 'currency', currency: plan.currency.toUpperCase() }).format(plan.amount / 100)}</p>{plan.methods.map(method=><button key={method} className="button button-primary" disabled={!!buyBusy || loginBusy || (!!user && !account)} onClick={() => checkout(plan.id,method)}>{buyBusy === plan.id+method ? 'Przejście do płatności…' : !user?'Zaloguj się, aby kupić':method==='paypal'?'Zapłać przez PayPal':'Zapłać kartą'}</button>)}<small>Jednorazowy zakup · bez abonamentu. Zdjęcie: 1 kredyt. Koszt filmu widoczny w studiu przed generowaniem.</small></article>)}</div> : <div className="launch-note">Sprzedaż pakietów jest w przygotowaniu. Ceny pojawią się tutaj po uruchomieniu płatności.</div>}
       </section>
       <section className="faq-section"><h2>Przed pierwszym zdjęciem</h2>{[
         ['Czy muszę mieć konto?', 'Darmowy test jednego zdjęcia działa bez konta i karty. Konto jest potrzebne do zakupu i korzystania z pakietów.'],
