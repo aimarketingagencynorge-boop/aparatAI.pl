@@ -5,7 +5,7 @@ import CameraInterface from './CameraInterface';
 import BrandKitView from './BrandKitView';
 import { StudioState, StudioItem, UserAccount } from '../types';
 import { translations } from '../translations';
-import { analyzeFoodImage } from '../services/geminiService';
+import { analyzeFoodImage, studioGet, resumeStudioVideo } from '../services/geminiService';
 import '../studio.css';
 
 export default function RestoredStudio({ account, initialImage, onClose, onRefresh }: { account: UserAccount; initialImage?: string; onClose:()=>void; onRefresh:()=>void }) {
@@ -13,6 +13,16 @@ export default function RestoredStudio({ account, initialImage, onClose, onRefre
  const [settingsOpen,setSettingsOpen]=useState(true);
  const [brand,setBrand]=useState(false);
  const [user,setUser]=useState(account);
+ const [videoConfig,setVideoConfig]=useState({videoEnabled:false,videoCredits:10});
+ const [resumeBusy,setResumeBusy]=useState(false);
+ const [resumeError,setResumeError]=useState('');
+ useEffect(()=>{void studioGet('/api/studio/capabilities').then(setVideoConfig).catch(()=>{});},[]);
+ const resumeVideo=async()=>{
+  if(!account.uid)return;
+  const id=localStorage.getItem(`aparatai-video-${account.uid}`);if(!id)return;
+  setResumeBusy(true);setResumeError('');
+  try{const url=await resumeStudioVideo(id);const link=document.createElement('a');link.href=url;link.download='aparatai-film.mp4';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e:any){setResumeError(e.message);}finally{setResumeBusy(false);}
+ };
  useEffect(()=>setUser(account),[account]);
  const t = translations[state.language];
  const capture = (input:string|string[]) => {
@@ -25,11 +35,11 @@ export default function RestoredStudio({ account, initialImage, onClose, onRefre
  useEffect(()=>{window.addEventListener('aparatai-account-refresh',onRefresh);return()=>window.removeEventListener('aparatai-account-refresh',onRefresh);},[onRefresh]);
  const busy=state.items.some(i=>i.isGenerating||i.isGeneratingVideo);
  return <section className="restored-studio" aria-label="Pełne studio fotografii produktowej">
-  <header className="studio-header"><strong>APARAT AI / STUDIO</strong><button disabled={busy} onClick={()=>setBrand(false)}>Zdjęcia produktów</button><button disabled={busy} onClick={()=>setBrand(true)}>Brand Kit</button><button onClick={()=>setSettingsOpen(!settingsOpen)}>Tła i ustawienia</button><span>{account.isAuthenticated?`${account.credits} zdjęć`:'1 darmowe ujęcie'}</span><button disabled={busy} onClick={onClose}>Wróć do aparatu</button></header>
+  <header className="studio-header"><strong>APARAT AI / STUDIO</strong><button disabled={busy} onClick={()=>setBrand(false)}>Zdjęcia produktów</button><button disabled={busy} onClick={()=>setBrand(true)}>Brand Kit</button><button onClick={()=>setSettingsOpen(!settingsOpen)}>Tła i ustawienia</button><span>{account.isAuthenticated?`${account.credits} kredytów`:'1 darmowe ujęcie'}</span><button disabled={busy} onClick={onClose}>Wróć do aparatu</button></header>
   <div className="studio-workspace">{brand?<BrandKitView t={t}/>:<>
-   {state.items.length?<StudioCanvas state={state} setState={setState} user={user} setUser={setUser} t={t} onUseCredit={async()=>!account.isAuthenticated||account.credits>0}/>:<CameraInterface onImageSelected={capture} t={t}/>}
+   {state.items.length?<StudioCanvas state={state} setState={setState} user={{...user,...videoConfig}} setUser={setUser} t={t} onUseCredit={async()=>!account.isAuthenticated||account.credits>0}/>:<CameraInterface onImageSelected={capture} t={t}/>}
    <div className={`studio-settings ${settingsOpen?'':'closed'}`}><AIControls state={state} setState={setState} t={t}/></div>
   </>}</div>
-  <div className="studio-status">Tło → światło → prezentacja → kąt → format → jakość → korekta → generowanie. {account.isAuthenticated?'Kredyt rozlicza serwer.':'Jedno darmowe ujęcie na sieć.'}</div>
+  <div className="studio-status">Zdjęcie: 1 kredyt. {videoConfig.videoEnabled?`Film 8 s / 1080p: ${videoConfig.videoCredits} kredytów.`:'Filmy są w przygotowaniu.'} {account.uid && localStorage.getItem(`aparatai-video-${account.uid}`) && <button disabled={resumeBusy||busy} onClick={resumeVideo}>{resumeBusy?'Sprawdzanie filmu…':'Wznów / pobierz ostatni film'}</button>} {resumeError && <span role="alert">{resumeError}</span>}</div>
  </section>;
 }

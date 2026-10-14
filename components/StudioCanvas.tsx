@@ -102,8 +102,10 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
     const item = state.items.find(i => i.id === itemId);
     if (!item) return;
 
-    const hasCredit = await onUseCredit();
-    if (!hasCredit) return;
+    if (!user.isAuthenticated || !user.videoEnabled || user.credits < (user.videoCredits || 10)) {
+      setState(prev=>({...prev,items:prev.items.map(i=>i.id===itemId?{...i,error:`Film wymaga zalogowania i ${user.videoCredits || 10} kredytów.`}:i)}));
+      return;
+    }
 
     setState(prev => ({
       ...prev,
@@ -264,7 +266,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
                   <div className="flex items-center gap-1.5">
                     <div className={`w-1.5 h-1.5 rounded-full ${item.transformedImage ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : item.error ? 'bg-red-500' : 'bg-zinc-700'}`} />
                     <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">
-                      {item.videoUrl ? 'Video 4K' : item.transformedImage ? t.studio.rendered : item.error ? 'Error' : t.studio.ready}
+                      {item.videoUrl ? 'Film 1080p' : item.transformedImage ? t.studio.rendered : item.error ? 'Error' : t.studio.ready}
                     </span>
                   </div>
                 </div>
@@ -350,12 +352,13 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
               <div className="flex gap-2 md:gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 no-scrollbar">
                 <button 
                   onClick={() => handleGenerateVideo(selectedItem.id)}
-                  disabled={true} title="Animacje są jeszcze w przygotowaniu"
+                  disabled={!user.videoEnabled || !user.isAuthenticated || !selectedItem.transformedImage || selectedItem.isGenerating || selectedItem.isGeneratingVideo || user.credits < (user.videoCredits || 10)} title={user.videoEnabled ? 'Film z wybranego zdjęcia: 8 s, 1080p. Format 16:9 lub pionowy 9:16.' : 'Filmy są jeszcze w przygotowaniu'}
                   className="flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-blue-500 font-black text-[9px] md:text-[10px] uppercase rounded-xl transition-all shadow-xl disabled:opacity-30 whitespace-nowrap"
                 >
                   {selectedItem.isGeneratingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
-                  {t.video.generate}
+                  Film · {user.videoCredits || 10} kredytów
                 </button>
+                {selectedItem.videoUrl && <a href={selectedItem.videoUrl} download="aparatai-film.mp4" className="text-blue-400 text-xs px-3 py-2">Pobierz film MP4</a>}
                 <button 
                   onClick={() => downloadImage(selectedItem.transformedImage || selectedItem.originalImage, selectedItem.analysis?.productName || 'product')}
                   className="flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 bg-zinc-100 hover:bg-white text-zinc-950 font-black text-[9px] md:text-[10px] uppercase rounded-xl transition-all shadow-xl whitespace-nowrap"
@@ -389,7 +392,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
                 </div>
                 
                 {selectedItem.videoUrl ? (
-                   <video src={selectedItem.videoUrl} autoPlay loop muted className="w-full h-full object-contain animate-in fade-in duration-700" />
+                   <video src={selectedItem.videoUrl} controls loop playsInline className="w-full h-full object-contain animate-in fade-in duration-700" />
                 ) : selectedItem.transformedImage ? (
                   <img src={selectedItem.transformedImage} key={selectedItem.transformedImage} className="w-full h-full object-contain animate-in fade-in zoom-in-95 duration-700" alt="Transformed" />
                 ) : (selectedItem.isGenerating || selectedItem.isGeneratingVideo) ? (
