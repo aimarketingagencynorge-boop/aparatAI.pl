@@ -7,6 +7,7 @@ import { StudioState, StudioItem, UserAccount } from '../types';
 import { translations } from '../translations';
 import { analyzeFoodImage, studioGet, resumeStudioVideo } from '../services/geminiService';
 import '../studio.css';
+import { registerLoginWorkspace, saveLoginWorkspace, restoreLoginWorkspace } from '../services/loginWorkspace';
 
 export default function RestoredStudio({ account, initialImage, onClose, onRefresh, onBuyCredits, trialAvailable }: { account: UserAccount; initialImage?: string; onClose:()=>void; onRefresh:()=>void; onBuyCredits:()=>void; trialAvailable:boolean }) {
  const [state,setState] = useState<StudioState>({items:[],selectedItemId:null,language:'pl',settings:{backgroundStyle:'black-satin',lightingType:'studio-soft',angle:'table-level',quality:'hd',aspectRatio:'1:1',presentationType:'table',refinementText:'',modelPreference:'pro',brandKit:{activeSlotId:null,activeVersionId:1,seriesLock:false,bgColor:'#000000',activePreset:null,referenceImage:null}}});
@@ -34,9 +35,16 @@ export default function RestoredStudio({ account, initialImage, onClose, onRefre
  useEffect(()=>{if(initialImage && initialImage!==lastImage.current){lastImage.current=initialImage;capture(initialImage);}},[initialImage]);
  useEffect(()=>{window.addEventListener('aparatai-account-refresh',onRefresh);return()=>window.removeEventListener('aparatai-account-refresh',onRefresh);},[onRefresh]);
  const busy=state.items.some(i=>i.isGenerating||i.isGeneratingVideo);
+ const [workspaceError,setWorkspaceError]=useState('');
+ useEffect(()=>registerLoginWorkspace(async()=>{
+  if(busy)throw new Error('Poczekaj na zakończenie generacji.');
+  await saveLoginWorkspace(state,account.uid);
+ }),[state,account.uid,busy]);
+ useEffect(()=>{let active=true;void restoreLoginWorkspace(account.uid).then(saved=>{if(active && saved)setState(saved);}).catch(()=>{if(active)setWorkspaceError('Nie udało się przywrócić lokalnej sesji sprzed logowania.');});return()=>{active=false;};},[]);
  const brandStorageKey=`aparatai-brand-profiles-${account.uid || 'guest'}`;
  useEffect(()=>{setState(prev=>({...prev,settings:{...prev.settings,brandProfile:undefined}}));},[account.uid]);
  return <section className="restored-studio" aria-label="Pełne studio fotografii produktowej">
+  {workspaceError && <div className="studio-error" role="alert">{workspaceError}</div>}
   <header className="studio-header"><strong>APARAT AI / STUDIO</strong><button disabled={busy} aria-pressed={!brand} onClick={()=>setBrand(false)}>Zdjęcia produktów</button><button disabled={busy} aria-pressed={brand} onClick={()=>setBrand(true)}>Brand Kit</button><button disabled={brand} aria-expanded={settingsOpen} aria-controls="studio-settings" onClick={()=>setSettingsOpen(!settingsOpen)}>{settingsOpen?'Zamknij ustawienia':'Tła i ustawienia'}</button><span>{account.isAuthenticated?`${account.credits} kredytów`:trialAvailable?'1 darmowe ujęcie':'Darmowa próba wykorzystana'}</span><button disabled={busy} onClick={onClose}>Wróć do aparatu</button></header>
   {account.isAuthenticated && account.credits<1 && <div className="studio-notice" role="status">Masz 0 kredytów. Darmowa próba jest dostępna bez logowania, raz na sieć. <button disabled={busy} onClick={onBuyCredits}>Wybierz pakiet</button></div>}
   {state.settings.brandProfile && <div className="studio-notice">Aktywny profil: {state.settings.brandProfile.name} <button disabled={busy} onClick={()=>setState(prev=>({...prev,settings:{...prev.settings,brandProfile:undefined}}))}>Wyłącz profil</button></div>}
