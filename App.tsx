@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, signInWithGoogle, logOut } from './firebaseAuth';
+import { auth, signInWithGoogle, finishGoogleSignIn, logOut } from './firebaseAuth';
 import { Camera, Aperture, Power, ImagePlus, SlidersHorizontal, Crosshair, Download } from 'lucide-react';
 import './public.css';
 import './camera.css';
 import RestoredStudio from './components/RestoredStudio';
+import AdminPanel from './components/AdminPanel';
 
 type TrialState = 'loading' | 'available' | 'processing' | 'succeeded' | 'failed' | 'unavailable';
 type Plan = { id: string; credits: number; amount: number; currency: string; methods: ('stripe'|'paypal')[] };
-type Account = { credits: number; plan: string };
+type Account = { credits: number; plan: string; role?: 'admin'|'customer' };
 const backgrounds = [
   { id: 'white', name: 'Czyste studio', detail: 'Białe tło i miękkie światło', color: '#f3f1ed' },
   { id: 'beige', name: 'Naturalna aranżacja', detail: 'Ciepły beż i światło z okna', color: '#ccb797' },
@@ -27,6 +28,7 @@ async function api(path: string, user?: User | null, body?: unknown) {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
+  const [adminOpen,setAdminOpen]=useState(false);
   const [studioStarted, setStudioStarted] = useState(false);
   useEffect(() => { if(studioOpen) setStudioStarted(true); }, [studioOpen]);
   const [account, setAccount] = useState<Account | null>(null);
@@ -51,7 +53,9 @@ export default function App() {
     try { const data = await api('/api/trial'); setTrial(data.state); setLocalPreview(data.localPreview); }
     catch { setTrial('unavailable'); }
   };
-  useEffect(() => { void loadTrial(); }, []);
+  useEffect(() => { void loadTrial(); }, [user?.uid]);
+  useEffect(()=>{void finishGoogleSignIn().catch(e=>setError(`Nie udało się dokończyć logowania Google. Kod: ${typeof e?.code==='string' && /^auth\/[a-z-]+$/.test(e.code)?e.code:'auth/unknown'}.`));},[]);
+  useEffect(()=>{if(user && account && sessionStorage.getItem('aparatai-resume-studio')==='true')setStudioOpen(true);},[user,account]);
   useEffect(() => onAuthStateChanged(auth, current => { setUser(current); setAccount(null); }), []);
   useEffect(()=>{let active=true;void api('/api/plans',user).then(data=>{if(active){setPlans(data.plans||[]);setPaymentsTestMode(data.testMode===true);}}).catch(()=>{});return()=>{active=false;};},[user]);
   useEffect(() => {
@@ -91,6 +95,7 @@ export default function App() {
         'auth/network-request-failed':'Nie udało się połączyć z logowaniem Google. Sprawdź połączenie i blokady przeglądarki.',
         'auth/operation-not-allowed':'Logowanie Google jest wyłączone w konfiguracji aplikacji. Skontaktuj się z obsługą.',
         'auth/user-disabled':'To konto jest zablokowane. Skontaktuj się z obsługą.'
+        ,'auth/workspace-save-failed':'Nie udało się zachować sesji przed logowaniem. Pobierz gotowe zdjęcia i spróbuj ponownie.'
       };
       setError(`${messages[code] || 'Nie udało się zalogować. Przekaż obsłudze poniższy kod błędu.'} Kod: ${code}.`);
     }
@@ -124,6 +129,8 @@ export default function App() {
     </header>
     {localPreview && <div className="preview-notice" role="status">Podgląd lokalny: generowanie AI i płatności są wyłączone. Wynik testu pokazuje przesłane zdjęcie.</div>}
     <main>
+      {account?.role==='admin' && <div className="admin-entry"><button className="button button-outline" onClick={()=>setAdminOpen(!adminOpen)}>{adminOpen?'Ukryj panel administratora':'Panel administratora'}</button></div>}
+      {adminOpen && user && account?.role==='admin' && <AdminPanel request={(path,body)=>api(path,user,body)} onClose={()=>setAdminOpen(false)} onChanged={()=>{void api('/api/account',user).then(setAccount).catch(e=>setError(e.message));}}/>}
       <section className="camera-hero" aria-label="Aparat AI — interaktywny wizjer">
         <div className="camera-topline"><span><i className="blue-led" /> APARAT AI / STUDIO PRODUKTOWE</span><span>FOTOGRAFIA DLA SKLEPÓW INTERNETOWYCH</span></div>
         <div className="camera-body">
@@ -186,6 +193,6 @@ export default function App() {
         ['Dlaczego test jest już wykorzystany?', 'Darmowy test jest przypisany do sieci. Osoby korzystające z tego samego Wi-Fi mogą dzielić limit. Zmiana karty przeglądarki ani odświeżenie nie odnawia próby.'],
         ['Co dzieje się ze zdjęciem?', 'Przed generowaniem podgląd jest lokalny. Po kliknięciu zdjęcie trafia na serwer i do dostawcy AI. Ta wersja nie zapisuje zdjęć w galerii; pobierz wynik przed zamknięciem strony.'],
       ].map(([q, a]) => <details key={q}><summary>{q}<span aria-hidden="true">+</span></summary><p>{a}</p></details>)}</section>
-    </main><footer className="site-footer"><a className="wordmark" href="#">aparat<span>ai</span><small>.pl</small></a><p>Zdjęcia i aranżacje dla sklepów internetowych.</p><a href="https://www.tiktok.com/@aparatai.pl" target="_blank" rel="noreferrer">Zobacz AparatAI na TikToku ↗</a></footer>
+    </main><footer className="site-footer"><a className="wordmark" href="#">aparat<span>ai</span><small>.pl</small></a><p>Zdjęcia i aranżacje dla sklepów internetowych.</p><address>WEBFABRIKK MACIEJ RYDZ<br/>Transistorfaret 2, 1396 Billingstad, Norwegia<br/>Numer organizacyjny: 934 291 735<br/><a href="mailto:post@webfabrikk.com">Kontakt: post@webfabrikk.com</a></address><a href="https://www.tiktok.com/@aparatai.pl" target="_blank" rel="noreferrer">Zobacz AparatAI na TikToku ↗</a></footer>
   </div>;
 }

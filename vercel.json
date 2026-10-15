@@ -1,5 +1,8 @@
 {
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/__/auth/:path*", "destination": "https://gen-lang-client-0893574157.firebaseapp.com/__/auth/:path*" }
+  ]
 }
