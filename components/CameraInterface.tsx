@@ -11,6 +11,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onImageSelected, t })
   const [isFlash, setIsFlash] = useState(false);
   const [view, setView] = useState<"lens" | "upload" | "processing">("lens");
   const [selectedCount, setSelectedCount] = useState<number>(0);
+  const [uploadError, setUploadError] = useState('');
 
   const triggerShutter = () => {
     setIsFlash(true);
@@ -21,28 +22,28 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onImageSelected, t })
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const files = Array.from(e.target.files || []) as File[];
+    e.target.value='';
+    if (files.length === 0) return;
+    setUploadError('');
+    if(files.length>50 || files.some(file=>!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)){
+      setUploadError('Wybierz do 50 zdjęć JPG, PNG lub WebP, każde do 5 MB.');return;
+    }
 
     setSelectedCount(files.length);
     setView("processing");
 
     const readFile = (file: File): Promise<string> => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (event) => resolve(event.target?.result as string);
+        reader.onerror = () => reject(new Error('Nie udało się odczytać zdjęcia.'));
         reader.readAsDataURL(file);
       });
     };
 
-    // Fix: Explicitly cast Array.from(files) to File[] to avoid 'unknown' type error during mapping (line 39 error fix)
-    const base64Array = await Promise.all((Array.from(files) as File[]).map(file => readFile(file)));
-    
-    setTimeout(() => {
-      if (onImageSelected) {
-        onImageSelected(base64Array);
-      }
-    }, 1500);
+    try { onImageSelected?.(await Promise.all(files.map(readFile))); }
+    catch { setView('upload');setUploadError('Nie udało się odczytać zdjęcia. Wybierz je ponownie.'); }
   };
 
   return (
@@ -58,8 +59,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onImageSelected, t })
               <Circle size={8} fill="currentColor" /> REC
             </div>
             <div className="flex items-center gap-6 border-l border-zinc-800/50 pl-8">
-              <span className="text-zinc-500">4K / 60FPS</span>
-              <span className="text-blue-500 font-bold bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">AI-VISION: ACTIVE</span>
+              <span className="text-zinc-500">STUDIO FOTO</span>
+              <span className="text-blue-500 font-bold bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">WYBIERZ PRODUKT</span>
             </div>
           </div>
         </div>
@@ -75,7 +76,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onImageSelected, t })
                   <p className="text-blue-400/40 text-[11px] uppercase tracking-[0.5em] font-black">Professional Neural Vision</p>
                 </div>
                 
-                <button 
+                <button aria-label="Wybierz zdjęcia produktu"
                   onClick={triggerShutter}
                   className="group relative w-44 h-44 rounded-full bg-zinc-950/50 border-8 border-zinc-800/50 p-3 transition-all hover:scale-110 active:scale-90 shadow-[0_0_80px_rgba(59,130,246,0.15)]"
                 >
@@ -90,7 +91,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onImageSelected, t })
             {view === "upload" && (
               <div className="bg-zinc-950/80 backdrop-blur-2xl p-12 rounded-[3.5rem] border border-blue-500/20 text-center shadow-[0_40px_100px_rgba(0,0,0,0.8)]">
                 <h2 className="text-3xl font-black text-white mb-3 uppercase tracking-tight italic">{t.camera.upload}</h2>
-                <input type="file" id="studio-upload" className="hidden" accept="image/*" multiple onChange={handleFileUpload} />
+                {uploadError && <p role="alert" className="text-red-300 mb-4">{uploadError}</p>}
+                <input type="file" id="studio-upload" className="hidden" accept="image/jpeg,image/png,image/webp" multiple onChange={handleFileUpload} />
                 <label htmlFor="studio-upload" className="block w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-3xl cursor-pointer transition-all uppercase text-sm tracking-widest mb-6">
                   {t.camera.library}
                 </label>
