@@ -5,8 +5,8 @@ export async function studioApi(path: string, body: unknown) {
  const user = auth.currentUser;
  const response = await fetch(apiOrigin+path,{method:'POST',headers:{'Content-Type':'application/json',...(user ? {Authorization:`Bearer ${await user.getIdToken()}`} : {})},body:JSON.stringify(body)});
  const data = await response.json();
- if(!response.ok) throw new Error(`${data.error?.message || 'Nie udało się dokończyć operacji.'}${data.error?.requestId ? ` Numer zgłoszenia: ${data.error.requestId}` : ''}`);
  window.dispatchEvent(new Event('aparatai-account-refresh'));
+ if(!response.ok) throw new Error(`${data.error?.message || 'Nie udało się dokończyć operacji.'}${data.error?.requestId ? ` Numer zgłoszenia: ${data.error.requestId}` : ''}`);
  return data;
 }
 export const analyzeFoodImage = async (image: string): Promise<FoodAnalysis> => {
