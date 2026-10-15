@@ -129,6 +129,7 @@ export interface BrandSlot {
 }
 
 export interface StudioSettings {
+  brandProfile?: { name: string; description: string; styleTags: string[]; alwaysRules: string; neverRules: string };
   backgroundStyle: string;
   lightingType: 'golden-hour' | 'studio-soft' | 'dramatic-noir' | 'window-light';
   angle: 'table-level' | 'flatlay' | 'macro-focus';

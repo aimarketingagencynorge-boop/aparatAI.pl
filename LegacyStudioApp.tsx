@@ -265,7 +265,7 @@ const App: React.FC = () => {
           </div>
         );
       case 'brand-kit':
-        return <BrandKitView t={t} />;
+        return <BrandKitView storageKey={`aparatai-brand-profiles-${user.uid || 'guest'}`} onClose={()=>setCurrentView('studio')} onApply={(brandProfile,lightingType,angle)=>setStudioState(prev=>({...prev,settings:{...prev.settings,brandProfile,lightingType,angle}}))} />;
       case 'menu-parser':
         return (
           <div className="flex flex-1 h-full overflow-hidden">
