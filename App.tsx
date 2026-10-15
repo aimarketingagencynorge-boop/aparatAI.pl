@@ -81,7 +81,19 @@ export default function App() {
   const login = async () => {
     setLoginBusy(true); setError('');
     try { await signInWithGoogle(); }
-    catch { setError('Nie udało się zalogować. Sprawdź, czy przeglądarka pozwala otworzyć okno logowania.'); }
+    catch (e:any) {
+      const code=typeof e?.code==='string' && /^auth\/[a-z-]+$/.test(e.code)?e.code:'auth/unknown';
+      const messages:Record<string,string>={
+        'auth/popup-blocked':'Przeglądarka zablokowała okno Google. Zezwól na wyskakujące okna dla AparatAI i spróbuj ponownie.',
+        'auth/popup-closed-by-user':'Logowanie Google nie zostało dokończone. Pozostaw okno otwarte do powrotu do AparatAI.',
+        'auth/cancelled-popup-request':'Rozpoczęto kolejne logowanie. Dokończ wybór konta w ostatnim oknie Google.',
+        'auth/unauthorized-domain':'Logowanie jest zablokowane dla tego adresu strony. Obsługa musi sprawdzić konfigurację domeny.',
+        'auth/network-request-failed':'Nie udało się połączyć z logowaniem Google. Sprawdź połączenie i blokady przeglądarki.',
+        'auth/operation-not-allowed':'Logowanie Google jest wyłączone w konfiguracji aplikacji. Skontaktuj się z obsługą.',
+        'auth/user-disabled':'To konto jest zablokowane. Skontaktuj się z obsługą.'
+      };
+      setError(`${messages[code] || 'Nie udało się zalogować. Przekaż obsłudze poniższy kod błędu.'} Kod: ${code}.`);
+    }
     finally { setLoginBusy(false); }
   };
   const upload = async (file?: File) => {
