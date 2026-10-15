@@ -27,6 +27,7 @@ async function api(path: string, user?: User | null, body?: unknown) {
 }
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [authReady,setAuthReady]=useState(false);
   const [studioOpen, setStudioOpen] = useState(false);
   const [adminOpen,setAdminOpen]=useState(false);
   const [studioStarted, setStudioStarted] = useState(false);
@@ -56,7 +57,7 @@ export default function App() {
   useEffect(() => { void loadTrial(); }, [user?.uid]);
   useEffect(()=>{void finishGoogleSignIn().catch(e=>setError(`Nie udało się dokończyć logowania Google. Kod: ${typeof e?.code==='string' && /^auth\/[a-z-]+$/.test(e.code)?e.code:'auth/unknown'}.`));},[]);
   useEffect(()=>{if(user && account && sessionStorage.getItem('aparatai-resume-studio')==='true')setStudioOpen(true);},[user,account]);
-  useEffect(() => onAuthStateChanged(auth, current => { setUser(current); setAccount(null); }), []);
+  useEffect(() => onAuthStateChanged(auth, current => { setUser(current); setAccount(null); setAuthReady(true); }), []);
   useEffect(()=>{let active=true;void api('/api/plans',user).then(data=>{if(active){setPlans(data.plans||[]);setPaymentsTestMode(data.testMode===true);}}).catch(()=>{});return()=>{active=false;};},[user]);
   useEffect(() => {
     if (!user) return;
@@ -83,6 +84,7 @@ export default function App() {
     return()=>{active=false;clearTimeout(timer);};
   },[user,paymentRetry]);
   const login = async () => {
+    if(!authReady || loginBusy)return;
     setLoginBusy(true); setError('');
     try { await signInWithGoogle(); }
     catch (e:any) {
@@ -101,6 +103,7 @@ export default function App() {
     }
     finally { setLoginBusy(false); }
   };
+  const logout=async()=>{setLoginBusy(true);setError('');try{await logOut();}catch{setError('Nie udało się wylogować. Spróbuj ponownie.');}finally{setLoginBusy(false);}};
   const upload = async (file?: File) => {
     if (!file || locked) return;
     setError('');
@@ -125,7 +128,7 @@ export default function App() {
     <div style={{display:studioOpen?'block':'none'}}>{studioStarted && <RestoredStudio account={{ credits: account?.credits || 0, totalCredits: account?.credits || 0, plan: (account?.plan || 'free') as any, apiAccess: account?.plan === 'enterprise', isAuthenticated: !!user, uid: user?.uid, email: user?.email || undefined }} trialAvailable={trial==='available'} onBuyCredits={()=>{setStudioOpen(false);location.hash='pakiety';document.getElementById('pakiety')?.scrollIntoView({behavior:'smooth'});}} initialImage={original} onClose={() => setStudioOpen(false)} onRefresh={() => { if(user) void api('/api/account', user).then(setAccount).catch(e=>setError(e.message)); else void loadTrial(); }} />}</div>
     <header className="site-header">
       <a href="#" className="wordmark" aria-label="AparatAI — strona główna"><span className="logo-mark"><Camera size={19} /></span>APARAT <span>AI</span><small>.pl</small></a>
-      <nav aria-label="Nawigacja główna"><a href="#jak-to-dziala">Jak to działa</a><a href="#pakiety">Pakiety</a><button className="button button-outline" onClick={() => setStudioOpen(true)}>Otwórz studio</button><button className="button button-quiet" disabled={loginBusy || busy} onClick={() => user ? logOut() : login()}>{user ? 'Wyloguj' : loginBusy ? 'Logowanie…' : 'Zaloguj się'}</button></nav>
+      <nav aria-label="Nawigacja główna"><a href="#jak-to-dziala">Jak to działa</a><a href="#pakiety">Pakiety</a><button className="button button-outline" onClick={() => setStudioOpen(true)}>Otwórz studio</button><button className="button button-quiet" disabled={!authReady || loginBusy || busy} onClick={() => user ? logout() : login()}>{!authReady?'Sprawdzanie konta…':loginBusy?'Łączenie z kontem…':user?'Wyloguj':'Zaloguj się'}</button></nav>
     </header>
     {localPreview && <div className="preview-notice" role="status">Podgląd lokalny: generowanie AI i płatności są wyłączone. Wynik testu pokazuje przesłane zdjęcie.</div>}
     <main>
@@ -151,7 +154,7 @@ export default function App() {
           </div>
           <aside className="camera-grip" aria-label="Przyciski aparatu">
             <div className="grip-ridges" />
-            <button className="camera-power" title={user ? 'Wyloguj' : 'Zaloguj się'} aria-label={user ? 'Wyloguj' : 'Zaloguj się'} disabled={busy || loginBusy} onClick={() => user ? logOut() : login()}><Power size={17} /><i className="blue-led" /></button>
+            <button className="camera-power" title={user ? 'Wyloguj' : 'Zaloguj się'} aria-label={user ? 'Wyloguj' : 'Zaloguj się'} disabled={!authReady || busy || loginBusy} onClick={() => user ? logout() : login()}><Power size={17} /><i className="blue-led" /></button>
             <div className="control-label">ARANŻACJA</div>
             <button className="mode-dial" aria-label="Zmień aranżację" disabled={busy} onClick={() => setStudioOpen(true)}><span className="dial-notch" /><Aperture size={31} /><span>{scene === 'white' ? 'STUDIO' : scene === 'beige' ? 'NATURAL' : 'PREMIUM'}</span></button>
             {result ? <a className="camera-control" href={result} download={result.startsWith('data:image/jpeg') ? 'aparatai-produkt.jpg' : 'aparatai-produkt.png'}><Download size={20} /><span>POBIERZ</span></a> : <button className="camera-control" disabled={locked} onClick={() => fileRef.current?.click()}><ImagePlus size={20} /><span>WGRAJ</span></button>}
@@ -176,7 +179,7 @@ export default function App() {
           <button className="button button-primary generate-button" disabled={!original || locked || (!!user && (!account || account.credits < 1))} onClick={generate}>{busy ? 'Tworzenie ujęcia…' : user ? 'Stwórz zdjęcie · 1 kredyt' : 'Przerób zdjęcie bezpłatnie'}</button>
           {!user && trial === 'loading' && <p role="status">Sprawdzamy dostępność testu…</p>}
           {!user && trial === 'unavailable' && <p role="status">Test jest chwilowo niedostępny. <button className="text-button" onClick={loadTrial}>Sprawdź ponownie</button></p>}
-          {!user && ['processing', 'succeeded', 'failed'].includes(trial) && <div className="trial-used" role="status"><strong>{trial === 'failed' ? 'Test nie został ukończony.' : trial === 'processing' ? 'Test z tej sieci jest w trakcie.' : 'Darmowy test został wykorzystany.'}</strong><p>{trial === 'failed' ? 'Nie ponawiamy automatycznie generowania. Zachowaj numer zgłoszenia z komunikatu błędu.' : 'Limit obejmuje jedną próbę z danej sieci. Zaloguj się, aby korzystać z pakietów.'}</p><button className="button button-outline" disabled={loginBusy} onClick={login}>Przejdź do konta</button></div>}
+          {!user && ['processing', 'succeeded', 'failed'].includes(trial) && <div className="trial-used" role="status"><strong>{trial === 'failed' ? 'Test nie został ukończony.' : trial === 'processing' ? 'Test z tej sieci jest w trakcie.' : 'Darmowy test został wykorzystany.'}</strong><p>{trial === 'failed' ? 'Nie ponawiamy automatycznie generowania. Zachowaj numer zgłoszenia z komunikatu błędu.' : 'Limit obejmuje jedną próbę z danej sieci. Zaloguj się, aby korzystać z pakietów.'}</p><button className="button button-outline" disabled={!authReady || loginBusy} onClick={login}>Przejdź do konta</button></div>}
           {result && <a className="button button-outline download-button" href={result} download={result.startsWith('data:image/jpeg') ? 'aparatai-produkt.jpg' : 'aparatai-produkt.png'}>Pobierz {localPreview ? 'podgląd' : 'zdjęcie'}</a>}
           <p className="editor-note">{user ? 'Nieudana generacja zwraca kredyt na konto.' : 'Jedna próba na sieć. Odświeżenie strony nie odnawia limitu.'} Po wgraniu AI rozpoznaje produkt. Nowe zdjęcie powstaje po kliknięciu przycisku generowania. Sprawdź etykietę, kolor i kształt produktu przed publikacją.</p>
         </div></div>{error && <div className="error-message" role="alert">{error}</div>}
@@ -184,7 +187,7 @@ export default function App() {
       <section id="pakiety" className="packages-section"><p className="eyebrow">ZDJĘCIA W TWOIM TEMPIE</p><h2>Gotowy na cały katalog?</h2><p>Przetestuj jedno zdjęcie. Pakiety pozwalają tworzyć kolejne aranżacje z własnego konta.</p>
         {paymentsTestMode && plans.length>0 && <div className="preview-notice" role="status">Płatności testowe Stripe — bez prawdziwej opłaty. Dostępne tylko dla konta testującego.</div>}
         {paymentStatus && <div role="status" className="launch-note">{paymentStatus} {paymentStatus.includes('ponownie') && <button className="button button-outline" onClick={()=>setPaymentRetry(x=>x+1)}>Sprawdź płatność ponownie</button>}</div>}
-        {plans.length ? <div className="plan-grid">{plans.map(plan => <article className="plan-card" key={plan.id}><h3>{plan.id === 'mini' ? 'Na próbę' : plan.id === 'starter' ? 'Na start' : plan.id==='pro'?'Dla sklepu':plan.id}</h3><strong>{plan.credits} kredytów</strong><p>{new Intl.NumberFormat('pl-PL', { style: 'currency', currency: plan.currency.toUpperCase() }).format(plan.amount / 100)}</p>{plan.methods.map(method=><button key={method} className="button button-primary" disabled={!!buyBusy || loginBusy || (!!user && !account)} onClick={() => checkout(plan.id,method)}>{buyBusy === plan.id+method ? 'Przejście do płatności…' : !user?'Zaloguj się, aby kupić':method==='paypal'?'Zapłać przez PayPal':'Zapłać kartą'}</button>)}<small>Jednorazowy zakup · bez abonamentu. Zdjęcie: 1 kredyt. Koszt filmu widoczny w studiu przed generowaniem.</small></article>)}</div> : <div className="launch-note">Sprzedaż pakietów jest w przygotowaniu. Ceny pojawią się tutaj po uruchomieniu płatności.</div>}
+        {plans.length ? <div className="plan-grid">{plans.map(plan => <article className="plan-card" key={plan.id}><h3>{plan.id === 'mini' ? 'Na próbę' : plan.id === 'starter' ? 'Na start' : plan.id==='pro'?'Dla sklepu':plan.id}</h3><strong>{plan.credits} kredytów</strong><p>{new Intl.NumberFormat('pl-PL', { style: 'currency', currency: plan.currency.toUpperCase() }).format(plan.amount / 100)}</p>{plan.methods.map(method=><button key={method} className="button button-primary" disabled={!authReady || !!buyBusy || loginBusy || (!!user && !account)} onClick={() => checkout(plan.id,method)}>{buyBusy === plan.id+method ? 'Przejście do płatności…' : !user?'Zaloguj się, aby kupić':method==='paypal'?'Zapłać przez PayPal':'Zapłać kartą'}</button>)}<small>Jednorazowy zakup · bez abonamentu. Zdjęcie: 1 kredyt. Koszt filmu widoczny w studiu przed generowaniem.</small></article>)}</div> : <div className="launch-note">Sprzedaż pakietów jest w przygotowaniu. Ceny pojawią się tutaj po uruchomieniu płatności.</div>}
       </section>
       <section className="faq-section"><h2>Przed pierwszym zdjęciem</h2>{[
         ['Czy muszę mieć konto?', 'Darmowy test jednego zdjęcia działa bez konta i karty. Konto jest potrzebne do zakupu i korzystania z pakietów.'],
