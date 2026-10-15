@@ -29,6 +29,8 @@ async function fixture(t, { videoFailure=false, startFailure=false, pending=fals
 test('Stripe return confirmation credits only the owner and only once',async t=>{
  const f=await fixture(t);
  assert.equal((await f.post('/api/checkout/confirm',{sessionId:'cs_test_checkout'},'u2')).status,404);
+ assert.equal((await f.post('/api/checkout/confirm',{sessionId:'cs_test_checkout'})).status,404);
+ await f.post('/api/checkout',{plan:'starter'});
  for(let i=0;i<2;i++)assert.equal((await f.post('/api/checkout/confirm',{sessionId:'cs_test_checkout'})).status,200);
  assert.equal(f.db.documents.get('users/u1').credits,200);
 });

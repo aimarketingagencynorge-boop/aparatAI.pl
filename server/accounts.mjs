@@ -9,11 +9,13 @@ import { validateLegacyRequest } from './legacy-settings.mjs';
 import { grantPurchase } from './credit-ledger.mjs';
 import { installPayPal, paypalClient } from './paypal.mjs';
 import { installVideo } from './video.mjs';
+import { installAdmin, adminAuthorizer } from './admin.mjs';
 
 export function installAccounts(app, { db, generate, analyze, origin, stripeClient, verifyToken = token => getAuth().verifyIdToken(token, true), configuredPlans, webhookSecret = process.env.STRIPE_WEBHOOK_SECRET, paypal = paypalClient(), videoProvider, videoEnabled = process.env.VIDEO_ENABLED === 'true', videoCost = Number(process.env.VIDEO_CREDIT_COST || 10), stripeMode = process.env.STRIPE_MODE || (/^(sk|rk)_test_/.test(process.env.STRIPE_SECRET_KEY || '') ? 'test' : 'live'), testEmails = (process.env.STRIPE_TEST_EMAILS || '').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean) }) {
   if (!['test','live'].includes(stripeMode)) throw new Error('Invalid STRIPE_MODE');
   if (process.env.STRIPE_SECRET_KEY && !new RegExp(`^(sk|rk)_${stripeMode}_`).test(process.env.STRIPE_SECRET_KEY)) throw new Error('Stripe key and mode do not match');
   const testing = stripeMode === 'test';
+  const isAdmin = adminAuthorizer(process.env.ADMIN_EMAILS || '');
   const canTest = account => !testing || (account?.email_verified === true && testEmails.includes(account.email?.toLowerCase()));
   const stripe = stripeClient === undefined ? (process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null) : stripeClient;
   const plans = configuredPlans || (process.env.CREDIT_PACKAGES_JSON ? JSON.parse(process.env.CREDIT_PACKAGES_JSON) : [
@@ -40,11 +42,12 @@ export function installAccounts(app, { db, generate, analyze, origin, stripeClie
     if (!plan || !plan.price || !owner) throw new ApiError(400, 'INVALID_ORDER', 'Nieprawidłowe zamówienie.');
     const saved = await db.collection('stripeOrders').doc(session.id).get();
     const order = saved.exists ? saved.data() : null;
+    if (!order) throw new ApiError(404, 'ORDER_MISSING', 'Nie znaleziono zamówienia AparatAI.');
     if (testing && (!order?.testAuthorized || order.stripeMode !== 'test')) throw new ApiError(403, 'TEST_ACCOUNT_REQUIRED', 'Zakupy testowe nie są dostępne na tym koncie.');
     if (order && (order.uid !== owner || order.plan !== plan.id || session.amount_total !== order.amount || session.currency !== order.currency)) throw new ApiError(400, 'INVALID_ORDER', 'Nieprawidłowe zamówienie.');
     const items = await stripe.checkout.sessions.listLineItems(session.id);
     if (items.data.length !== 1 || items.data[0].price?.id !== (order?.price || plan.price) || items.data[0].quantity !== 1) throw new ApiError(400, 'INVALID_ORDER', 'Nieprawidłowe zamówienie.');
-    await grantPurchase(db, { receiptId: session.id, uid: owner, plan: plan.id, credits: order?.credits || plan.credits, provider: 'stripe', amount: session.amount_total, currency: session.currency });
+    await grantPurchase(db, { receiptId: session.id, uid: owner, plan: plan.id, credits: order.credits, provider: 'stripe', amount: session.amount_total, currency: session.currency });
     return true;
   };
 
@@ -57,7 +60,11 @@ export function installAccounts(app, { db, generate, analyze, origin, stripeClie
       catch { throw new ApiError(400, 'INVALID_SIGNATURE', 'Nieprawidłowy podpis.'); }
       if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) {
         const session = event.data.object;
-        if (session.payment_status === 'paid') await fulfillStripe(session);
+        if (session.payment_status === 'paid') {
+          // The same Stripe account can serve other applications. Only our durable orders may fund accounts.
+          const saved = await db.collection('stripeOrders').doc(session.id).get();
+          if (saved.exists || session.metadata?.app === 'aparatai') await fulfillStripe(session);
+        }
       }
       res.json({ received: true });
     } catch (e) { next(e); }
@@ -73,6 +80,7 @@ export function installAccounts(app, { db, generate, analyze, origin, stripeClie
   };
   installPayPal(app, { db, authenticate, client: paypal, getPlans, origin });
   installVideo(app, { db, authenticate, provider: videoProvider, cost: videoCost, enabled: videoEnabled });
+  installAdmin(app, { db, authenticate, isAdmin });
   app.post('/api/checkout/confirm', authenticate, async (req, res, next) => {
     try {
       if (!stripe || !webhookSecret) throw new ApiError(503, 'PAYMENTS_DISABLED', 'Płatności nie są jeszcze uruchomione.');
@@ -91,7 +99,7 @@ export function installAccounts(app, { db, generate, analyze, origin, stripeClie
         const initial = { uid: req.account.uid, email: req.account.email || '', credits: 0, totalCredits: 0, plan: 'free', createdAt: new Date().toISOString() };
         tx.create(ref, initial); return initial;
       });
-      res.json({ credits: user.credits, plan: user.plan, activeGeneration: user.activeGeneration || null });
+      res.json({ credits: user.credits, plan: user.plan, activeGeneration: user.activeGeneration || null, role: isAdmin(req.account) ? 'admin' : 'customer' });
     } catch (e) { next(e); }
   });
   app.get('/api/plans', async (_req, res, next) => {
@@ -114,7 +122,7 @@ export function installAccounts(app, { db, generate, analyze, origin, stripeClie
       if (!price.active || price.recurring || price.unit_amount == null || (price.livemode !== undefined && price.livemode !== !testing) || (plan.amount !== undefined && (price.unit_amount !== plan.amount || price.currency !== plan.currency))) throw new Error('Invalid price');
       const account = await db.collection('users').doc(req.account.uid).get();
       if (!account.exists) throw new ApiError(409, 'ACCOUNT_REQUIRED', 'Odśwież panel konta.');
-      const session = await stripe.checkout.sessions.create({ mode: 'payment', locale: 'pl', line_items: [{ price: plan.price, quantity: 1 }], client_reference_id: req.account.uid, metadata: { plan: plan.id }, success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${origin}/?payment=cancelled` });
+      const session = await stripe.checkout.sessions.create({ mode: 'payment', locale: 'pl', line_items: [{ price: plan.price, quantity: 1 }], client_reference_id: req.account.uid, metadata: { app: 'aparatai', plan: plan.id }, success_url: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${origin}/?payment=cancelled` });
       await db.runTransaction(async tx => tx.create(db.collection('stripeOrders').doc(session.id), { uid: req.account.uid, plan: plan.id, credits: plan.credits, price: plan.price, amount: price.unit_amount, currency: price.currency, stripeMode, testAuthorized: testing && canTest(req.account), createdAt: new Date().toISOString() }));
       res.json({ url: session.url });
     } catch (e) { next(e); }

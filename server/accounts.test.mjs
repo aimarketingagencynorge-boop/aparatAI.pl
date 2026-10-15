@@ -52,7 +52,8 @@ test('failed paid generation refunds exactly one credit and releases account loc
 test('signed Stripe event credits once across duplicate and async-completed deliveries; unsigned event denied', async t => {
   const f = await fixture(t);
   f.db.documents.set('users/u1', { uid: 'u1', credits: 0, totalCredits: 0, plan: 'free' });
-  const event = { id: 'evt_test1', type: 'checkout.session.completed', data: { object: { id: 'cs_test_1', payment_status: 'paid', client_reference_id: 'u1', metadata: { plan: 'starter' } } } };
+  f.db.documents.set('stripeOrders/cs_test_1', { uid:'u1',plan:'starter',credits:100,price:'price_starter',amount:19900,currency:'pln' });
+  const event = { id: 'evt_test1', type: 'checkout.session.completed', data: { object: { id: 'cs_test_1', amount_total:19900,currency:'pln',payment_status: 'paid', client_reference_id: 'u1', metadata: { plan: 'starter' } } } };
   const send = event => f.post('/api/stripe/webhook', event, { 'stripe-signature': stripeSDK.webhooks.generateTestHeaderString({ payload: JSON.stringify(event), secret: webhookSecret }) });
   assert.equal((await f.post('/api/stripe/webhook', event, {})).status, 400);
   assert.equal((await send(event)).status, 200);
@@ -65,11 +66,23 @@ test('unpaid or unknown-plan Stripe event does not grant credits', async t => {
   const f = await fixture(t);
   f.db.documents.set('users/u1', { uid: 'u1', credits: 0, totalCredits: 0, plan: 'free' });
   for (const [paid, plan, expected] of [['unpaid', 'starter', 200], ['paid', 'forged', 400]]) {
-    const event = { id: 'evt_bad', type: 'checkout.session.completed', data: { object: { id: 'cs_bad', payment_status: paid, client_reference_id: 'u1', metadata: { plan } } } };
+    const event = { id: 'evt_bad', type: 'checkout.session.completed', data: { object: { id: 'cs_bad', payment_status: paid, client_reference_id: 'u1', metadata: { app:'aparatai', plan } } } };
     const signature = stripeSDK.webhooks.generateTestHeaderString({ payload: JSON.stringify(event), secret: webhookSecret });
     assert.equal((await f.post('/api/stripe/webhook', event, { 'stripe-signature': signature })).status, expected);
   }
   assert.equal(f.db.documents.get('users/u1').credits, 0);
+});
+
+test('a signed checkout from another application is acknowledged without minting credits', async t => {
+  const f = await fixture(t);
+  const event = { type:'checkout.session.completed',data:{object:{id:'cs_other_app',payment_status:'paid',client_reference_id:'u1',metadata:{plan:'starter'}}}};
+  const signature = stripeSDK.webhooks.generateTestHeaderString({payload:JSON.stringify(event),secret:webhookSecret});
+  assert.equal((await f.post('/api/stripe/webhook',event,{'stripe-signature':signature})).status,200);
+  assert.equal(f.db.documents.size,0);
+  event.data.object.metadata.app='aparatai';
+  const ownSignature = stripeSDK.webhooks.generateTestHeaderString({payload:JSON.stringify(event),secret:webhookSecret});
+  assert.equal((await f.post('/api/stripe/webhook',event,{'stripe-signature':ownSignature})).status,404);
+  assert.equal(f.db.documents.size,0);
 });
 test('Firestore-backed trial survives a new store instance and serializes reservations', async () => {
   const db = new TestDB();
