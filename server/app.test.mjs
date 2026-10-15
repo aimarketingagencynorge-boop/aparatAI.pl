@@ -55,6 +55,20 @@ test('cross-site requests cannot start a generation', async t => {
   assert.equal((await f.post(undefined, { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
   assert.equal(f.calls(), 0);
 });
+
+test('brand profile reaches the image provider and is validated before reserving the trial', async t => {
+  let received;
+  const f = await fixture(t, { capture: args => { received=args[2]; } });
+  const settings={backgroundStyle:'white-packshot',lightingType:'studio-soft',angle:'table-level',quality:'hd',aspectRatio:'1:1',presentationType:'table',refinementText:'',modelPreference:'flash'};
+  const brandProfile={name:'Sklep / V1',description:'Błękitne akcenty',styleTags:['minimalizm'],alwaysRules:'Subtelny cień',neverRules:'Dodatkowe przedmioty'};
+  assert.equal((await f.post({image,settings:{...settings,brandProfile:{...brandProfile,description:'x'.repeat(801)}}})).status,400);
+  assert.equal((await f.post({image,settings:{...settings,brandProfile:{...brandProfile,styleTags:['x'.repeat(41)]}}})).status,400);
+  assert.equal(f.calls(),0);
+  assert.equal((await f.post({image,settings:{...settings,brandProfile:{...brandProfile,untrustedField:'discard me'}}})).status,200);
+  assert.deepEqual(received.settings.brandProfile,brandProfile);
+  assert.equal((await f.post({image,settings:{...settings,brandProfile}})).status,409);
+  assert.equal(f.calls(),1);
+});
 test('allowed storefront can preflight and generate directly across origins', async t => {
   const f = await fixture(t);
   const response = await fetch(`${f.url}/api/trial`, { method: 'OPTIONS', headers: { Origin: 'https://aparatai.pl', 'Sec-Fetch-Site': 'cross-site' } });

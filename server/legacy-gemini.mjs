@@ -113,6 +113,7 @@ export const generateStudioBackground = async (item, settings, forceFlash = fals
       LIGHTING: ${settings.lightingType}, cinematic HDR.
       COMPOSITION: ${settings.angle}, ${settings.presentationType}.
       REFINEMENT: ${settings.refinementText}.
+      ${settings.brandProfile ? `BRAND STYLE (apply to the scene, never alter the product, existing lettering or logo): ${JSON.stringify(settings.brandProfile)}.` : ''}
       ${isRefresh ? "VARIATION: This is a subsequent take. Provide a new, fresh perspective. Change lighting nuances slightly." : ""}
       SEED: ${nonce}`;
         const cleanBase64 = item.originalImage.includes(',') ? item.originalImage.split(',')[1] : item.originalImage;
