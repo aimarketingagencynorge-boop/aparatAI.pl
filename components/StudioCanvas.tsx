@@ -10,14 +10,17 @@ interface StudioCanvasProps {
   user: UserAccount;
   setUser: React.Dispatch<React.SetStateAction<UserAccount>>;
   onUseCredit: () => Promise<boolean>;
+  onBuyCredits?: () => void;
   t: any;
 }
 
-const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setUser, onUseCredit, t }) => {
+const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setUser, onUseCredit, onBuyCredits, t }) => {
   const selectedItem = state.items.find(i => i.id === state.selectedItemId) || state.items[0];
   const [isDebugLoading, setIsDebugLoading] = useState(false);
   const [videoLoadingStep, setVideoLoadingStep] = useState(0);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [uploadError,setUploadError] = useState('');
+  const generationLock = React.useRef(false);
 
   useEffect(() => {
     let interval: any;
@@ -40,7 +43,8 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
 
   const handleProcessItem = async (itemId: string, forceFlash: boolean = false) => {
     const item = state.items.find(i => i.id === itemId);
-    if (!item) return;
+    if (!item || generationLock.current) return;
+    generationLock.current = true;
 
     // Set generating state immediately for better UX
     setState(prev => ({
@@ -59,7 +63,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
       if (!hasCredit) {
         setState(prev => ({
           ...prev,
-          items: prev.items.map(i => i.id === itemId ? { ...i, isGenerating: false } : i)
+          items: prev.items.map(i => i.id === itemId ? { ...i, isGenerating: false, error: 'Brakuje kredytów na zdjęcie. Wybierz pakiet, aby kontynuować.' } : i)
         }));
         return;
       }
@@ -83,7 +87,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
           error: err.message || 'Generation failed' 
         } : i)
       }));
-    }
+    } finally { generationLock.current = false; }
   };
 
   const handleBatchProcess = async () => {
@@ -164,8 +168,15 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach(file => {
+    setUploadError('');
+    const selectedFiles=Array.from(files) as File[];
+    if(selectedFiles.some(file=>!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)) {
+      setUploadError('Wybierz zdjęcia JPG, PNG lub WebP o rozmiarze do 5 MB każde.'); e.target.value=''; return;
+    }
+    if(state.items.length+selectedFiles.length>50) {setUploadError('W jednej sesji możesz mieć maksymalnie 50 zdjęć.');e.target.value='';return;}
+    selectedFiles.forEach(file => {
       const reader = new FileReader();
+      reader.onerror=()=>setUploadError('Nie udało się odczytać zdjęcia. Wybierz plik ponownie.');
       reader.onload = (event) => {
         const newItem: StudioItem = {
           id: Math.random().toString(36).substr(2, 9),
@@ -182,6 +193,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
       };
       reader.readAsDataURL(file as Blob);
     });
+    e.target.value='';
   };
 
   const videoStepMsgs = [t.video.step1, t.video.step2, t.video.step3];
@@ -223,7 +235,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
   };
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#050505]">
+    <div className="studio-canvas flex-1 flex flex-col md:flex-row overflow-hidden bg-[#050505]">
       {/* Sidebar: Projects List */}
       <aside className="hidden md:flex w-72 border-r border-zinc-900 flex-col h-full bg-zinc-950/50 shrink-0">
         <div className="p-4 border-b border-zinc-900 bg-zinc-950 sticky top-0 z-10 space-y-3">
@@ -333,6 +345,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
       </div>
 
       <main className="flex-1 relative flex flex-col min-w-0 p-4 md:p-8 overflow-y-auto no-scrollbar">
+        {uploadError && <div role="alert" className="studio-error">{uploadError}</div>}
         {selectedItem ? (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="sticky top-0 z-30 bg-[#050505]/90 backdrop-blur-xl -mx-4 px-4 py-4 md:static md:bg-transparent md:backdrop-blur-none md:mx-0 md:px-0 md:py-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b border-zinc-900 md:border-none">
@@ -363,7 +376,7 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
                   onClick={() => downloadImage(selectedItem.transformedImage || selectedItem.originalImage, selectedItem.analysis?.productName || 'product')}
                   className="flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 bg-zinc-100 hover:bg-white text-zinc-950 font-black text-[9px] md:text-[10px] uppercase rounded-xl transition-all shadow-xl whitespace-nowrap"
                 >
-                  <Download size={12} /> {selectedItem.transformedImage ? t.studio.download : "Download"}
+                  <Download size={12} /> {selectedItem.transformedImage ? t.studio.download : "Pobierz oryginał"}
                 </button>
                 <button 
                   onClick={() => handleProcessItem(selectedItem.id)} 
@@ -376,10 +389,14 @@ const StudioCanvas: React.FC<StudioCanvasProps> = ({ state, setState, user, setU
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
+            {selectedItem.error && <div role="alert" className="studio-error">
+              <p>{formatError(selectedItem.error)}</p>
+              {onBuyCredits && <button onClick={onBuyCredits}>{user.isAuthenticated ? 'Przejdź do pakietów' : 'Zaloguj się i wybierz pakiet'}</button>}
+            </div>}
+            <div className="studio-comparison flex-1 flex flex-col md:flex-row gap-4 min-h-0">
               <div className="flex-1 relative rounded-[1.5rem] md:rounded-[2rem] border border-zinc-900 bg-zinc-950/50 overflow-hidden group shadow-2xl min-h-[250px] md:min-h-0">
                 <div className="absolute top-3 left-3 md:top-4 md:left-4 z-10 px-2 md:px-3 py-1 bg-black/60 backdrop-blur-md rounded-full border border-zinc-800">
-                  <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest">RAW INPUT</span>
+                  <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest">ORYGINAŁ</span>
                 </div>
                 <img src={selectedItem.originalImage} className="w-full h-full object-contain" alt="Original" />
               </div>
